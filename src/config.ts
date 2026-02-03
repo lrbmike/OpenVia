@@ -8,6 +8,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
+import { Logger } from './utils/logger'
+
+const logger = new Logger('Config')
 
 /** Application Name */
 const APP_NAME = 'openvia'
@@ -137,14 +140,17 @@ function loadConfigFromFile(configPath?: string): Partial<AppConfig> {
   const filePath = getConfigFilePath(configPath)
 
   if (!existsSync(filePath)) {
+    logger.debug(`No config file found at: ${filePath}`)
     return {}
   }
 
   try {
     const content = readFileSync(filePath, 'utf-8')
-    return JSON.parse(content) as Partial<AppConfig>
+    const parsed = JSON.parse(content) as Partial<AppConfig>
+    logger.info(`Loaded configuration from: ${filePath}`)
+    return parsed
   } catch (error) {
-    console.warn(`Warning: Failed to parse config file: ${filePath}`)
+    logger.warn(`Failed to parse config file: ${filePath}`)
     return {}
   }
 }
@@ -153,70 +159,70 @@ function loadConfigFromFile(configPath?: string): Partial<AppConfig> {
  * Load Configuration from Environment Variables
  */
 function loadConfigFromEnv(): Partial<AppConfig> {
-  const config: Partial<AppConfig> = {
-    telegram: {
-      botToken: '',
-      allowedUserIds: [],
-    },
-    claude: {
-      apiKey: '',
-      baseUrl: 'https://api.anthropic.com',
-      model: 'claude-sonnet-4-5-20250929',
-      timeout: 120000,
-      permissionMode: 'default',
-      shellWhitelist: [],
-    },
-    logging: {
-      level: 'info',
-      verbose: false,
-    },
-  }
+  const config: Partial<AppConfig> = {}
 
   // Telegram
   if (process.env.TELEGRAM_BOT_TOKEN) {
-    config.telegram!.botToken = process.env.TELEGRAM_BOT_TOKEN
+    config.telegram = {
+      botToken: process.env.TELEGRAM_BOT_TOKEN,
+      allowedUserIds: config.telegram?.allowedUserIds || [],
+    }
+    logger.debug('Using TELEGRAM_BOT_TOKEN from environment')
   }
   if (process.env.ALLOWED_USER_IDS) {
-    config.telegram!.allowedUserIds = process.env.ALLOWED_USER_IDS.split(',')
+    const ids = process.env.ALLOWED_USER_IDS.split(',')
       .map((id) => parseInt(id.trim(), 10))
       .filter((id) => !isNaN(id))
+    config.telegram = {
+      botToken: config.telegram?.botToken || '',
+      allowedUserIds: ids,
+    }
+    logger.debug('Using ALLOWED_USER_IDS from environment')
   }
 
   // Claude
   if (process.env.ANTHROPIC_API_KEY) {
-    config.claude!.apiKey = process.env.ANTHROPIC_API_KEY
+    config.claude = { ...config.claude, apiKey: process.env.ANTHROPIC_API_KEY } as any
+    logger.info('Using ANTHROPIC_API_KEY from environment')
   }
   if (process.env.ANTHROPIC_BASE_URL) {
-    config.claude!.baseUrl = process.env.ANTHROPIC_BASE_URL
+    config.claude = { ...config.claude, baseUrl: process.env.ANTHROPIC_BASE_URL } as any
+    logger.debug('Using ANTHROPIC_BASE_URL from environment')
   }
   if (process.env.CLAUDE_MODEL) {
-    config.claude!.model = process.env.CLAUDE_MODEL
+    config.claude = { ...config.claude, model: process.env.CLAUDE_MODEL } as any
+    logger.debug('Using CLAUDE_MODEL from environment')
   }
   if (process.env.CLAUDE_TIMEOUT) {
     const timeout = parseInt(process.env.CLAUDE_TIMEOUT, 10)
     if (!isNaN(timeout)) {
-      config.claude!.timeout = timeout
+      config.claude = { ...config.claude, timeout: timeout } as any
+      logger.debug('Using CLAUDE_TIMEOUT from environment')
     }
   }
   if (process.env.CLAUDE_PERMISSION_MODE) {
     const mode = process.env.CLAUDE_PERMISSION_MODE as AppConfig['claude']['permissionMode']
     if (['default', 'acceptEdits', 'bypassPermissions'].includes(mode)) {
-      config.claude!.permissionMode = mode
+      config.claude = { ...config.claude, permissionMode: mode } as any
+      logger.debug('Using CLAUDE_PERMISSION_MODE from environment')
     }
   }
   if (process.env.SHELL_WHITELIST) {
-    config.claude!.shellWhitelist = process.env.SHELL_WHITELIST.split(',').map((cmd) => cmd.trim())
+    config.claude = { ...config.claude, shellWhitelist: process.env.SHELL_WHITELIST.split(',').map((cmd) => cmd.trim()) } as any
+    logger.debug('Using SHELL_WHITELIST from environment')
   }
 
   // Logging
   if (process.env.LOG_LEVEL) {
     const level = process.env.LOG_LEVEL as AppConfig['logging']['level']
     if (['debug', 'info', 'warn', 'error'].includes(level)) {
-      config.logging!.level = level
+      config.logging = { ...config.logging, level: level } as any
+      logger.debug('Using LOG_LEVEL from environment')
     }
   }
   if (process.env.OPENVIA_VERBOSE === 'true') {
-    config.logging!.verbose = true
+    config.logging = { ...config.logging, verbose: true } as any
+    logger.debug('Using verbose mode from environment')
   }
 
   return config
