@@ -132,17 +132,26 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/openvia
-ExecStart=/opt/openvia/openvia-linux
+# Working Directory: Recommended to be the project root
+WorkingDirectory=%h/workspaces/OpenVia
+# Environment: PATH must contain paths to node, bun, and claude
+Environment="PATH=%h/.local/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Path to the executable
+ExecStart=%h/workspaces/OpenVia/dist/openvia
 Restart=always
-Environment="TELEGRAM_BOT_TOKEN=your-token-here"
-Environment="ALLOWED_USER_IDS=123456789"
-# Path to node/npm if not in standard PATH
-# Environment="PATH=/usr/bin:/usr/local/bin:/root/.nvm/versions/node/v20.x/bin"
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> [!TIP]
+>
+> 1. `%h` is a systemd specifier that expands to the user's home directory
+>    (e.g., `/home/your-user`).
+> 2. `WorkingDirectory` should be set to the directory where OpenVia is located.
+> 3. If the binary compiled via Bun cannot locate `claude`, you can manually
+>    specify the path using the `CLAUDE_EXECUTABLE_PATH` environment variable.
 
 Manage the service:
 

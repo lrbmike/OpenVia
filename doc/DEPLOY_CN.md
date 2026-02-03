@@ -131,17 +131,26 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/openvia
-ExecStart=/opt/openvia/openvia-linux
+# 运行目录：建议设置为源码根目录
+WorkingDirectory=%h/workspaces/OpenVia
+# 注入环境变量：PATH 必须包含 node, bun 以及 claude 的路径
+Environment="PATH=%h/.local/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# 执行程序路径
+ExecStart=%h/workspaces/OpenVia/dist/openvia
 Restart=always
-Environment="TELEGRAM_BOT_TOKEN=your-token-here"
-Environment="ALLOWED_USER_IDS=123456789"
-# 如果 node/npm 不在标准 PATH 中，请在此补全
-# Environment="PATH=/usr/bin:/usr/local/bin:/root/.nvm/versions/node/v20.x/bin"
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> [!TIP]
+>
+> 1. `%h` 是 systemd 的占位符，会自动展开为当前用户的家目录（如
+>    `/home/your-user`）。
+> 2. `WorkingDirectory` 应该设置为你存放 OpenVia 源码或二进制文件的目录。
+> 3. 如果通过 Bun 编译为单文件后无法定位 `claude`，可以通过配置
+>    `CLAUDE_EXECUTABLE_PATH` 环境变量手动指定路径。
 
 管理服务：
 
