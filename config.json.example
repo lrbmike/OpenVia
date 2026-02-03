@@ -1,0 +1,18 @@
+{
+  "telegram": {
+    "botToken": "your_bot_token_here",
+    "allowedUserIds": [123456789, 987654321]
+  },
+  "claude": {
+    "apiKey": "sk-ant-api03-...",
+    "baseUrl": "https://api.anthropic.com",
+    "model": "claude-3-5-sonnet-20241022",
+    "timeout": 120000,
+    "permissionMode": "default",
+    "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"]
+  },
+  "logging": {
+    "level": "info",
+    "verbose": false
+  }
+}

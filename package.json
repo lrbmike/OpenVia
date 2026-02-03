@@ -1,0 +1,60 @@
+{
+    "name": "@lrbmike/openvia",
+    "version": "0.0.1",
+    "description": "OpenVia - A universal, extensible CLI gateway for AI Agents",
+    "type": "module",
+    "license": "MIT",
+    "author": "lrbmike",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lrbmike/claude-code-bot.git"
+    },
+    "bugs": {
+        "url": "https://github.com/lrbmike/claude-code-bot/issues"
+    },
+    "homepage": "https://github.com/lrbmike/claude-code-bot#readme",
+    "keywords": [
+        "openvia",
+        "ai",
+        "agent",
+        "cli",
+        "gateway",
+        "anthropic",
+        "claude-code"
+    ],
+    "bin": {
+        "openvia": "./src/index.ts"
+    },
+    "files": [
+        "src",
+        "dist",
+        "README.md",
+        "README_CN.md",
+        "LICENSE"
+    ],
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "scripts": {
+        "dev": "bun run --watch src/index.ts",
+        "start": "bun run src/index.ts",
+        "build": "bun build --compile --minify ./src/index.ts --outfile dist/openvia",
+        "build:linux": "bun build --compile --minify --target=linux-x64 ./src/index.ts --outfile dist/openvia-linux",
+        "build:win": "bun build --compile --minify --target=windows-x64 ./src/index.ts --outfile dist/openvia.exe",
+        "build:mac": "bun build --compile --minify --target=darwin-x64 ./src/index.ts --outfile dist/openvia-darwin",
+        "build:mac-arm": "bun build --compile --minify --target=darwin-arm64 ./src/index.ts --outfile dist/openvia-darwin-arm64",
+        "build:all": "bun run build:linux && bun run build:win && bun run build:mac && bun run build:mac-arm",
+        "prepublishOnly": "echo 'Note: This package requires Bun runtime'"
+    },
+    "dependencies": {
+        "@anthropic-ai/claude-agent-sdk": "^0.2.29",
+        "grammy": "^1.21.1",
+        "uuid": "^13.0.0",
+        "zod": "^3.22.4"
+    },
+    "devDependencies": {
+        "@types/bun": "latest",
+        "@types/uuid": "^11.0.0",
+        "typescript": "^5.3.3"
+    }
+}
