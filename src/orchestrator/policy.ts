@@ -19,10 +19,26 @@ const auditLog: AuditEntry[] = []
 /** Maximum number of audit log entries */
 const MAX_AUDIT_ENTRIES = 1000
 
+/** Allowed user IDs cache */
+let allowedUsersInternal: string[] = []
+
+/**
+ * Initialize Policy Module
+ */
+export function initPolicy(allowedIds: number[]): void {
+  allowedUsersInternal = allowedIds.map(String)
+}
+
 /**
  * Get allowed users list
  */
-function getAllowedUsers(): string[] {
+export function getAllowedUsers(): string[] {
+  // 1. Priority: Internal cache (from config.json)
+  if (allowedUsersInternal.length > 0) {
+    return allowedUsersInternal
+  }
+
+  // 2. Fallback: Environment variable
   const users = process.env.ALLOWED_USER_IDS || ''
   return users.split(',').map((id) => id.trim()).filter((id) => id.length > 0)
 }

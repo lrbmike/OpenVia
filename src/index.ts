@@ -8,6 +8,7 @@
 
 import { startBot, stopBot } from './bot'
 import { initRouter, handleMessage } from './orchestrator'
+import { initPolicy } from './orchestrator/policy'
 import { initClaudeClient, stopClaudeClient } from './ai'
 import { Logger } from './utils/logger'
 import { parseCLI, showHelp, showVersion, showBanner } from './cli'
@@ -51,7 +52,10 @@ async function startBotCommand(): Promise<void> {
   }
 
   logger.info('Initializing...')
-
+ 
+  // Initialize Policy
+  initPolicy(config.telegram.allowedUserIds)
+ 
   // Initialize Claude Client
   const sessionsDir = getSessionsDir()
   await initClaudeClient(config.claude, sessionsDir)

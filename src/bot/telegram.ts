@@ -2,7 +2,7 @@
  * Telegram Bot Communication Layer
  */
 import { Bot, Context, GrammyError, HttpError } from 'grammy'
-import { isUserAllowed, logAudit } from '../orchestrator/policy'
+import { isUserAllowed, logAudit, getAllowedUsers } from '../orchestrator/policy'
 import { Logger } from '../utils/logger'
 
 const logger = new Logger('TelegramBot')
@@ -27,7 +27,7 @@ export async function startBot(
   
   // 1. Register Permission Handler
   PermissionBridge.getInstance().registerHandler(async (req) => {
-      const adminIds = (process.env.ALLOWED_USER_IDS || '').split(',').filter(Boolean)
+      const adminIds = getAllowedUsers()
       
       const keyboard = new InlineKeyboard()
           .text('✅ Allow', `perm:allow:${req.id}`)
