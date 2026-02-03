@@ -14,27 +14,35 @@ export class ClaudeSDKClient {
   async initialize(config: AppConfig['claude']) {
     this.logger.info('[ClaudeSDK] Initializing Claude Agent SDK...')
     
-    if (!config.apiKey && !process.env.ANTHROPIC_API_KEY) {
-      this.logger.warn('[ClaudeSDK] ANTHROPIC_API_KEY is missing.')
+    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      this.logger.warn('[ClaudeSDK] ANTHROPIC_API_KEY is missing from both config and env.')
+    } else {
+      // Safely log the presence of the key
+      this.logger.info(`[ClaudeSDK] API Key found (starts with: ${apiKey.slice(0, 10)}..., length: ${apiKey.length})`)
+      // Inject into current process env just in case
+      process.env.ANTHROPIC_API_KEY = apiKey
     }
     
     this.logger.info(`[ClaudeSDK] Config - Model: ${config.model}`)
     if (config.baseUrl) {
       this.logger.info(`[ClaudeSDK] Config - Base URL: ${config.baseUrl}`)
+      process.env.ANTHROPIC_BASE_URL = config.baseUrl
     }
 
     try {
       this.session = unstable_v2_createSession({
         model: config.model,
-        executable: 'bun',
+        // Auto-detect runtime (node/bun/deno)
+        executable: undefined,
         env: {
             ...process.env as Record<string, string | undefined>,
-            ANTHROPIC_API_KEY: config.apiKey || process.env.ANTHROPIC_API_KEY,
+            ANTHROPIC_API_KEY: apiKey,
             ANTHROPIC_BASE_URL: config.baseUrl || process.env.ANTHROPIC_BASE_URL,
             CLAUDE_MODEL: config.model,
         },
-        // We use 'default' so the SDK asks us via canUseTool
-        permissionMode: config.permissionMode || 'default', 
+        // Bypass permission prompt if configured
+        permissionMode: config.permissionMode || 'default',
         
         // Permission Handler
         canUseTool: async (toolName, input, options): Promise<PermissionResult> => {
