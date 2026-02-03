@@ -54,7 +54,7 @@ async function startBotCommand(): Promise<void> {
 
   // Initialize Claude Client
   const sessionsDir = getSessionsDir()
-  await initClaudeClient(sessionsDir)
+  await initClaudeClient(config.claude, sessionsDir)
 
   // Initialize Router
   await initRouter({

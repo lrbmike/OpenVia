@@ -6,8 +6,9 @@
  */
 
 import { ClaudeSDKClient } from './claude-sdk'
-import type { ClaudeResponse, Message, SkillDescription } from '../types'
+import type { ClaudeResponse } from '../types'
 import { Logger } from '../utils/logger'
+import type { AppConfig } from '../config'
 import fs from 'node:fs/promises'
 
 const logger = new Logger('ClaudeCLI')
@@ -70,7 +71,7 @@ export async function ensureWorkDir(dir: string): Promise<void> {
 /**
  * Initialize the Claude Agent SDK client
  */
-export async function initClaudeClient(workDir?: string) {
+export async function initClaudeClient(config: AppConfig['claude'], workDir?: string) {
   if (claudeClient) return
 
   const cwd = workDir || process.cwd()
@@ -79,7 +80,7 @@ export async function initClaudeClient(workDir?: string) {
   await ensureWorkDir(cwd)
   
   claudeClient = new ClaudeSDKClient()
-  await claudeClient.initialize()
+  await claudeClient.initialize(config)
   
   logger.info('[Claude] SDK client initialized.')
 }
@@ -100,15 +101,15 @@ export async function stopClaudeClient() {
  */
 export async function callClaude(
   input: string,
-  context: {
-    history?: Message[]
-    skills?: SkillDescription[]
+  _context: {
     skillResult?: { skill: string; result: unknown }
     config: ClaudeCliConfig
   }
 ): Promise<ClaudeResponse> {
   if (!claudeClient) {
-    await initClaudeClient(context.config.workDir)
+    // This is a safety fallback, but in normal flow initClaudeClient 
+    // should have been called by index.ts with full config.
+    throw new Error('Claude client not initialized. Please call initClaudeClient first.')
   }
 
   if (!claudeClient) {

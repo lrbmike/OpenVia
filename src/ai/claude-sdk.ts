@@ -2,6 +2,8 @@ import { unstable_v2_createSession } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKSession, PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { PermissionBridge } from '../utils/permission-bridge'
 
+import type { AppConfig } from '../config'
+
 export class ClaudeSDKClient {
   private session: SDKSession | null = null
   private logger = console
@@ -9,27 +11,30 @@ export class ClaudeSDKClient {
 
   constructor() {}
 
-  async initialize() {
+  async initialize(config: AppConfig['claude']) {
     this.logger.info('[ClaudeSDK] Initializing Claude Agent SDK...')
     
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!config.apiKey && !process.env.ANTHROPIC_API_KEY) {
       this.logger.warn('[ClaudeSDK] ANTHROPIC_API_KEY is missing.')
     }
     
-    this.logger.info(`[ClaudeSDK] Config - Model: ${process.env.CLAUDE_MODEL || 'default'}`)
-    if (process.env.ANTHROPIC_BASE_URL) {
-      this.logger.info(`[ClaudeSDK] Config - Base URL: ${process.env.ANTHROPIC_BASE_URL}`)
+    this.logger.info(`[ClaudeSDK] Config - Model: ${config.model}`)
+    if (config.baseUrl) {
+      this.logger.info(`[ClaudeSDK] Config - Base URL: ${config.baseUrl}`)
     }
 
     try {
       this.session = unstable_v2_createSession({
-        model: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
+        model: config.model,
         executable: 'bun',
         env: {
             ...process.env as Record<string, string | undefined>,
+            ANTHROPIC_API_KEY: config.apiKey || process.env.ANTHROPIC_API_KEY,
+            ANTHROPIC_BASE_URL: config.baseUrl || process.env.ANTHROPIC_BASE_URL,
+            CLAUDE_MODEL: config.model,
         },
         // We use 'default' so the SDK asks us via canUseTool
-        permissionMode: 'default', 
+        permissionMode: config.permissionMode || 'default', 
         
         // Permission Handler
         canUseTool: async (toolName, input, options): Promise<PermissionResult> => {
@@ -39,11 +44,11 @@ export class ClaudeSDKClient {
             if (['Read', 'Glob', 'Grep', 'LS', 'View'].includes(toolName)) {
                  return { behavior: 'allow', toolUseID: options.toolUseID, updatedInput: toolInput }
             }
-
+ 
             // 2. Shell Whitelist Check
-            if (toolName === 'Bash' && process.env.SHELL_WHITELIST) {
+            if (toolName === 'Bash' && config.shellWhitelist) {
                  const command = (toolInput.command || '').trim()
-                 const whitelist = process.env.SHELL_WHITELIST.split(',').map(s => s.trim())
+                 const whitelist = config.shellWhitelist
                  const cmdName = command.split(' ')[0]
                  if (whitelist.includes(cmdName)) {
                      this.logger.info(`[Permission] Auto-allowing whitelisted command: ${cmdName}`)
