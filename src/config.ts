@@ -31,6 +31,7 @@ export interface AppConfig {
     timeout: number
     permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions'
     shellWhitelist: string[]
+    executablePath?: string
   }
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error'
@@ -62,6 +63,7 @@ export function getDefaultConfig(): AppConfig {
       timeout: 120000,
       permissionMode: 'default',
       shellWhitelist: ['ls', 'cat', 'pwd', 'git status', 'echo'],
+      executablePath: '',
     },
     logging: {
       level: 'info',
@@ -210,6 +212,10 @@ function loadConfigFromEnv(): Partial<AppConfig> {
   if (process.env.SHELL_WHITELIST) {
     config.claude = { ...config.claude, shellWhitelist: process.env.SHELL_WHITELIST.split(',').map((cmd) => cmd.trim()) } as any
     logger.debug('Using SHELL_WHITELIST from environment')
+  }
+  if (process.env.CLAUDE_EXECUTABLE_PATH) {
+    config.claude = { ...config.claude, executablePath: process.env.CLAUDE_EXECUTABLE_PATH } as any
+    logger.debug('Using CLAUDE_EXECUTABLE_PATH from environment')
   }
 
   // Logging

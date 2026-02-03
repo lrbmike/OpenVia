@@ -3,13 +3,48 @@ import type { SDKSession, PermissionResult } from '@anthropic-ai/claude-agent-sd
 import { PermissionBridge } from '../utils/permission-bridge'
 
 import type { AppConfig } from '../config'
+import { execSync } from 'node:child_process'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 
 export class ClaudeSDKClient {
   private session: SDKSession | null = null
   private logger = console
   private permissionBridge = PermissionBridge.getInstance()
-
+ 
   constructor() {}
+ 
+  /**
+   * Detect Claude Code executable path
+   */
+  private detectClaudePath(): string | undefined {
+    // 1. Try PATH
+    try {
+      const stdout = execSync('which claude', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      if (stdout && existsSync(stdout)) {
+        return stdout
+      }
+    } catch {
+      // ignore
+    }
+ 
+    // 2. Try common home locations
+    const commonPaths = [
+      join(homedir(), '.local/bin/claude'),
+      join(homedir(), 'node_modules/.bin/claude'),
+      '/usr/local/bin/claude',
+      '/usr/bin/claude',
+    ]
+ 
+    for (const p of commonPaths) {
+      if (existsSync(p)) {
+        return p
+      }
+    }
+ 
+    return undefined
+  }
 
   async initialize(config: AppConfig['claude']) {
     this.logger.info('[ClaudeSDK] Initializing Claude Agent SDK...')
@@ -35,6 +70,8 @@ export class ClaudeSDKClient {
         model: config.model,
         // Auto-detect runtime (node/bun/deno)
         executable: undefined,
+        // Path to Claude Code executable (especially needed when compiled via Bun)
+        pathToClaudeCodeExecutable: config.executablePath || this.detectClaudePath(),
         env: {
             ...process.env as Record<string, string | undefined>,
             ANTHROPIC_API_KEY: apiKey,
