@@ -1,18 +1,22 @@
 {
     "name": "@lrbmike/openvia",
     "version": "0.0.1",
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
     "description": "OpenVia - A universal, extensible CLI gateway for AI Agents",
     "type": "module",
     "license": "MIT",
     "author": "lrbmike",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/lrbmike/claude-code-bot.git"
+        "url": "git+https://github.com/lrbmike/OpenVia.git"
     },
     "bugs": {
-        "url": "https://github.com/lrbmike/claude-code-bot/issues"
+        "url": "https://github.com/lrbmike/OpenVia/issues"
     },
-    "homepage": "https://github.com/lrbmike/claude-code-bot#readme",
+    "homepage": "https://github.com/lrbmike/OpenVia#readme",
     "keywords": [
         "openvia",
         "ai",
@@ -23,7 +27,7 @@
         "claude-code"
     ],
     "bin": {
-        "openvia": "./src/index.ts"
+        "openvia": "./dist/index.js"
     },
     "files": [
         "src",
@@ -38,13 +42,13 @@
     "scripts": {
         "dev": "bun run --watch src/index.ts",
         "start": "bun run src/index.ts",
-        "build": "bun build --compile --minify ./src/index.ts --outfile dist/openvia",
+        "build": "bun build ./src/index.ts --target=node --outfile=dist/index.js",
         "build:linux": "bun build --compile --minify --target=linux-x64 ./src/index.ts --outfile dist/openvia-linux",
         "build:win": "bun build --compile --minify --target=windows-x64 ./src/index.ts --outfile dist/openvia.exe",
         "build:mac": "bun build --compile --minify --target=darwin-x64 ./src/index.ts --outfile dist/openvia-darwin",
         "build:mac-arm": "bun build --compile --minify --target=darwin-arm64 ./src/index.ts --outfile dist/openvia-darwin-arm64",
         "build:all": "bun run build:linux && bun run build:win && bun run build:mac && bun run build:mac-arm",
-        "prepublishOnly": "echo 'Note: This package requires Bun runtime'"
+        "prepublishOnly": "bun run build"
     },
     "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.29",

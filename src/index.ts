@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * OpenVia - Universal CLI Gateway for AI Agents
  *

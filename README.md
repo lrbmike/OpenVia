@@ -34,10 +34,18 @@ local AI Agent through a mobile or web interface securely.
 
 ## Installation
 
-### Option A: Download Pre-built Binary (Recommended)
+### Option A: Install via npm (Recommended for users)
+
+```bash
+npm install -g @lrbmike/openvia
+# or
+bun install -g @lrbmike/openvia
+```
+
+### Option B: Download Pre-built Binary
 
 Download the executable for your platform from
-[Releases](https://github.com/lrbmike/claude-code-bot/releases):
+[Releases](https://github.com/lrbmike/OpenVia/releases):
 
 - `openvia-linux` - Linux x64
 - `openvia.exe` - Windows x64
@@ -50,12 +58,12 @@ chmod +x openvia-linux
 ./openvia-linux --help
 ```
 
-### Option B: Install via Bun
+### Option C: Install from Source (For developers)
 
 ```bash
 # Clone the repository
-git clone https://github.com/lrbmike/claude-code-bot.git
-cd claude-code-bot
+git clone https://github.com/lrbmike/OpenVia.git
+cd OpenVia
 
 # Install dependencies
 bun install
@@ -135,22 +143,22 @@ Location: `~/.openvia/config.json`
 
 ```json
 {
-    "telegram": {
-        "botToken": "",
-        "allowedUserIds": []
-    },
-    "claude": {
-        "apiKey": "",
-        "baseUrl": "https://api.anthropic.com",
-        "model": "claude-sonnet-4-5-20250929",
-        "timeout": 120000,
-        "permissionMode": "default",
-        "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"]
-    },
-    "logging": {
-        "level": "info",
-        "verbose": false
-    }
+  "telegram": {
+    "botToken": "",
+    "allowedUserIds": []
+  },
+  "claude": {
+    "apiKey": "",
+    "baseUrl": "https://api.anthropic.com",
+    "model": "claude-sonnet-4-5-20250929",
+    "timeout": 120000,
+    "permissionMode": "default",
+    "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"]
+  },
+  "logging": {
+    "level": "info",
+    "verbose": false
+  }
 }
 ```
 

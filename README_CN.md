@@ -29,10 +29,18 @@ Telegram）的桥梁。它让你能够通过移动端或 Web 界面安全地与�
 
 ## 安装说明
 
-### 选项 A：下载预编译二进制文件（推荐）
+### 方式 1：通过 npm 安装 (推荐)
 
-从 [Releases](https://github.com/lrbmike/claude-code-bot/releases)
-下载对应平台的可执行文件：
+```bash
+npm install -g @lrbmike/openvia
+# 或者使用 bun
+bun install -g @lrbmike/openvia
+```
+
+### 方式 2：下载预编译二进制文件
+
+从 [Releases](https://github.com/lrbmike/OpenVia/releases)
+下载对应平台的执行文件：
 
 - `openvia-linux` - Linux x64
 - `openvia.exe` - Windows x64
@@ -45,12 +53,12 @@ chmod +x openvia-linux
 ./openvia-linux --help
 ```
 
-### 选项 B：使用 Bun 安装
+### 方式 3：从源码安装 (开发者)
 
 ```bash
 # 克隆仓库
-git clone https://github.com/lrbmike/claude-code-bot.git
-cd claude-code-bot
+git clone https://github.com/lrbmike/OpenVia.git
+cd OpenVia
 
 # 安装依赖
 bun install
