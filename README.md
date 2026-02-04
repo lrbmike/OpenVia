@@ -111,7 +111,8 @@ openvia config set telegram.botToken "your-bot-token"
   },
   "claude": {
     "model": "claude-3-5-sonnet-20240620",
-    "timeout": 120000
+    "timeout": 120000,
+    "systemPrompt": "Always answer in Chinese"
   }
 }
 ````
@@ -176,7 +177,8 @@ Location: `~/.openvia/config.json`
     "model": "claude-sonnet-4-5-20250929",
     "timeout": 120000,
     "permissionMode": "default",
-    "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"]
+    "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"],
+    "systemPrompt": "Always answer in Chinese"
   },
   "logging": {
     "level": "info",

@@ -1,5 +1,6 @@
 import { unstable_v2_createSession } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKSession, PermissionResult } from '@anthropic-ai/claude-agent-sdk'
+import { buildCombinedSystemPrompt } from './prompts'
 import { PermissionBridge } from '../utils/permission-bridge'
 
 import type { AppConfig } from '../config'
@@ -66,6 +67,10 @@ export class ClaudeSDKClient {
     }
 
     try {
+      // Build Combine System Prompt
+      const combinedPrompt = buildCombinedSystemPrompt(config.systemPrompt)
+      this.logger.debug(`[ClaudeSDK] System Prompt Appended: ${config.systemPrompt ? 'Yes' : 'No'}`)
+
       this.session = unstable_v2_createSession({
         model: config.model,
         // Auto-detect runtime (node/bun/deno)
@@ -77,6 +82,15 @@ export class ClaudeSDKClient {
             ANTHROPIC_API_KEY: apiKey,
             ANTHROPIC_BASE_URL: config.baseUrl || process.env.ANTHROPIC_BASE_URL,
             CLAUDE_MODEL: config.model,
+        },
+        // System Prompt Injection
+        // We use the 'preset' type to retain Claude Code's default coding capabilities
+        // and APPEND our OpenVia context + User custom prompt.
+        // @ts-ignore: SDK types might be behind, confirmed in d.ts
+        systemPrompt: {
+            type: 'preset',
+            preset: 'claude_code',
+            append: combinedPrompt
         },
         // Bypass permission prompt if configured
         permissionMode: config.permissionMode || 'default',

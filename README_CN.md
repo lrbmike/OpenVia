@@ -106,7 +106,8 @@ openvia config set telegram.botToken "your-bot-token"
   },
   "claude": {
     "model": "claude-3-5-sonnet-20240620",
-    "timeout": 120000
+    "timeout": 120000,
+    "systemPrompt": "Always answer in Chinese (请用中文回答)"
   }
 }
 ````

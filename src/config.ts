@@ -46,6 +46,7 @@ export interface AppConfig {
     permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions'
     shellWhitelist: string[]
     executablePath?: string
+    systemPrompt?: string
   }
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error'
@@ -257,6 +258,10 @@ function loadConfigFromEnv(): Partial<AppConfig> {
   if (process.env.CLAUDE_EXECUTABLE_PATH) {
     config.claude = { ...config.claude, executablePath: process.env.CLAUDE_EXECUTABLE_PATH } as any
     logger.debug('Using CLAUDE_EXECUTABLE_PATH from environment')
+  }
+  if (process.env.CLAUDE_SYSTEM_PROMPT) {
+      config.claude = { ...config.claude, systemPrompt: process.env.CLAUDE_SYSTEM_PROMPT } as any
+      logger.debug('Using CLAUDE_SYSTEM_PROMPT from environment')
   }
 
   // Logging
