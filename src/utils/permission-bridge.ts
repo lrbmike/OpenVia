@@ -75,6 +75,18 @@ export class PermissionBridge {
   }
 
   /**
+   * Find a pending request by User ID
+   */
+  findRequestByUser(userId: string): PendingRequest | undefined {
+    for (const request of this.pendingRequests.values()) {
+      if (request.context && request.context.userId === userId) {
+        return request
+      }
+    }
+    return undefined
+  }
+
+  /**
    * Resolve a pending request
    */
   resolveRequest(id: string, decision: PermissionDecision) {

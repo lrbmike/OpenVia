@@ -94,6 +94,38 @@ export class FeishuChannel implements Channel {
                 })
             }
 
+            // 1. Intercept Permission Approvals
+            // This allows users to reply "ok" instead of clicking buttons
+            const pendingRequest = PermissionBridge.getInstance().findRequestByUser(userId)
+            if (pendingRequest) {
+                const lowerInput = text.trim().toLowerCase()
+                
+                // Keywords
+                const allowKeywords = ['ok', 'confirm', 'yes', 'y', '允许', '同意', '确认', 'allow']
+                const denyKeywords = ['no', 'n', 'deny', 'cancel', '拒绝', '取消', '不']
+
+                if (allowKeywords.includes(lowerInput)) {
+                    logger.info(`[Feishu] User ${userId} allowed permission via chat`)
+                    PermissionBridge.getInstance().resolveRequest(pendingRequest.id, 'allow')
+                    await sendReply('✅ Permission granted via chat.')
+                    return
+                }
+
+                if (denyKeywords.includes(lowerInput)) {
+                     logger.info(`[Feishu] User ${userId} denied permission via chat`)
+                     PermissionBridge.getInstance().resolveRequest(pendingRequest.id, 'deny')
+                     await sendReply('❌ Permission denied via chat.')
+                     return
+                }
+                
+                // Deadlock Prevention:
+                // If we proceed to messageHandler while Claude is waiting for this permission,
+                // it will hit the Mutex lock and wait forever (or timeout).
+                // So we MUST return here.
+                await sendReply('⚠️ You have a pending permission request. Please reply "ok" to allow or "no" to deny.')
+                return
+            }
+
             // Notice: We don't await messageHandler here to return to Feishu quickly
             // Pass this.id ('feishu') as channelId
             messageHandler(text, userId, this.id, sendReply).catch(error => {
