@@ -12,32 +12,30 @@ recommended).
 - **Bun**: v1.2.0 or higher
 - **Node.js**: v18.0.0 or higher
 
-## 1. Build from Source
+### 1. Build from Source
 
-Execute the following commands in your development environment
-(Windows/Mac/Linux):
+Execute the following commands in your development environment:
 
 ```bash
-# Build for current platform
+# Option A: Build as a Node.js script (for npm or local dev)
+# Output: dist/index.js
 bun run build
 
-# Build Linux x64
+# Option B: Build as a standalone binary (for server deployment)
+# Output: dist/openvia-linux (Linux), dist/openvia.exe (Windows), etc.
 bun run build:linux
-
-# Build Windows x64
 bun run build:win
-
-# Build macOS x64
 bun run build:mac
-
-# Build macOS ARM64 (Apple Silicon)
 bun run build:mac-arm
 
 # Build all platforms
 bun run build:all
 ```
 
-The compiled binaries will be located in the `dist/` directory.
+After build:
+
+- If you ran `bun run build`, use `node dist/index.js` to start.
+- If you ran `bun run build:linux`, use `./dist/openvia-linux` directly.
 
 ---
 
@@ -132,15 +130,20 @@ After=network.target
 [Service]
 Type=simple
 # Recommended to run as a non-root user to ensure ~/.openvia/ configuration is accessible
-User=lrbmike
+User=<your-user>
 # Working Directory: Set to the project root or the directory where the binary is located
-WorkingDirectory=/home/lrbmike/workspaces/OpenVia
+WorkingDirectory=/home/<your-user>/workspaces/OpenVia
 # Environment: PATH must contain paths to node, bun, and claude
 # Note: systemd does not automatically load .bashrc, so PATH must be explicitly defined here
-Environment="PATH=/home/lrbmike/.local/bin:/home/lrbmike/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/home/<your-user>/.local/bin:/home/<your-user>/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Path to the executable
-ExecStart=/home/lrbmike/workspaces/OpenVia/dist/openvia
+# Execution Path (Choose one):
+# Option 1: Using standalone binary (Recommended)
+ExecStart=/home/<your-user>/workspaces/OpenVia/dist/openvia-linux
+
+# Option 2: Running Node.js script (dist/index.js)
+# ExecStart=/usr/bin/node /home/lrbmike/workspaces/OpenVia/dist/index.js
+
 Restart=always
 
 [Install]
@@ -151,12 +154,12 @@ WantedBy=multi-user.target
 >
 > 1. **User Setting**: If you run as `User=root`, OpenVia will look for
 >    configuration in `/root/.openvia/`. If you developed as a regular user
->    (e.g., `lrbmike`), update `User` accordingly.
+>    (e.g., `<your-user>`), update `User` accordingly.
 > 2. **Rebuild**: If you have recently modified the source code (e.g., added
 >    Feishu support), ensure you run `bun run build` to regenerate the
 >    `dist/openvia` binary.
 > 3. **Absolute Paths**: It is recommended to use absolute paths (e.g.,
->    `/home/lrbmike/...`) instead of `%h` in the `Service` configuration to
+>    `/home/<your-user>/...`) instead of `%h` in the `Service` configuration to
 >    avoid parsing issues in some systemd versions.
 
 Manage the service:
@@ -177,8 +180,23 @@ systemctl start openvia
 ~/.openvia/
 ├── config.json     # User configuration
 ├── sessions/       # Claude session cache
-└── logs/           # (Reserved)
+└── logs/           # Log directory
+    └── app-2026-02-04.log  # Daily-rotated runtime logs
 ```
+
+### Viewing Logs
+
+1. **Systemd Logs (Recommended)**:
+   ```bash
+   # View real-time service logs
+   sudo journalctl -u openvia -f
+   ```
+
+2. **Local Log File**:
+   ```bash
+   # View logs written by the application
+   tail -f ~/.openvia/logs/app.log
+   ```
 
 ### Priority
 

@@ -12,31 +12,30 @@ OpenVia 使用 [Bun](https://bun.sh) (推荐 v1.2+)
 - **Bun**: v1.2.0 或更高版本
 - **Node.js**: v18.0.0 或更高版本
 
-## 1. 源码编译
+### 1. 源码编译
 
 在开发环境（Windows/Mac/Linux 均可）执行以下命令：
 
 ```bash
-# 编译当前平台版本
+# 方式 A: 编译为 Node.js 脚本 (推荐用于发布到 npm 或本地开发)
+# 生成: dist/index.js
 bun run build
 
-# 编译 Linux x64
+# 方式 B: 编译为单文件独立二进制程序 (推荐用于服务器部署)
+# 生成: dist/openvia-linux (Linux), dist/openvia.exe (Windows) 等
 bun run build:linux
-
-# 编译 Windows x64
 bun run build:win
-
-# 编译 macOS x64
 bun run build:mac
-
-# 编译 macOS ARM64 (Apple Silicon)
 bun run build:mac-arm
 
 # 编译所有平台版本
 bun run build:all
 ```
 
-构建完成后，你可以在 `dist/` 目录下找到生成的可执行文件。
+构建完成后：
+
+- 如果运行 `bun run build`，你需要使用 `node dist/index.js` 启动。
+- 如果运行 `bun run build:linux`，你直接运行 `./dist/openvia-linux`。
 
 ---
 
@@ -130,18 +129,21 @@ After=network.target
 
 [Service]
 Type=simple
-[Service]
-Type=simple
 # 建议使用普通用户运行，以确保能读取到 ~/.openvia/ 目录下的配置
-User=lrbmike
+User=<your-user>
 # 运行目录：设置为源码根目录或二进制文件所在目录
-WorkingDirectory=/home/lrbmike/workspaces/OpenVia
+WorkingDirectory=/home/<your-user>/workspaces/OpenVia
 # 注入环境变量：PATH 必须包含 node, bun 以及 claude 的路径
 # 注意：systemd 不会自动加载 .bashrc，必须在这里明确指定 PATH
-Environment="PATH=/home/lrbmike/.local/bin:/home/lrbmike/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=/home/<your-user>/.local/bin:/home/<your-user>/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# 执行程序路径
-ExecStart=/home/lrbmike/workspaces/OpenVia/dist/openvia
+# 执行程序路径 (选择其中一种方式):
+# 方式 1: 如果使用独立二进制程序 (推荐)
+ExecStart=/home/<your-user>/workspaces/OpenVia/dist/openvia-linux
+
+# 方式 2: 如果运行 Node.js 脚本 (dist/index.js)
+# ExecStart=/usr/bin/node /home/<your-user>/workspaces/OpenVia/dist/index.js
+
 Restart=always
 
 [Install]
@@ -152,11 +154,11 @@ WantedBy=multi-user.target
 >
 > 1. **User 设置**: 如果你使用 `User=root`运行，OpenVia 会尝试从
 >    `/root/.openvia/` 读取配置。如果你在开发时使用的是普通用户（如
->    `lrbmike`），请将 `User` 修改为对应的用户名。
+>    `<your-user>`），请将 `User` 修改为对应的用户名。
 > 2. **重新编译**: 如果你最近修改了代码（如增加了飞书支持），请务必执行
 >    `bun run build` 重新生成 `dist/openvia`。
 > 3. **绝对路径**: 在 `Service` 配置中，建议使用绝对路径（如
->    `/home/lrbmike/...`）代替 `%h`，以避免某些 systemd 版本中的解析问题。
+>    `/home/<your-user>/...`）代替 `%h`，以避免某些 systemd 版本中的解析问题。
 
 管理服务：
 
@@ -176,8 +178,23 @@ systemctl start openvia
 ~/.openvia/
 ├── config.json     # 用户配置文件
 ├── sessions/       # Claude 会话缓存
-└── logs/           # (预留)
+└── logs/           # 日志目录
+    └── app-2026-02-04.log  # 按日切分的运行时日志
 ```
+
+### 查看日志
+
+1. **Systemd 日志 (推荐)**:
+   ```bash
+   # 实时查看服务日志
+   sudo journalctl -u openvia -f
+   ```
+
+2. **本地日志文件**:
+   ```bash
+   # 查看应用写入的日志文件
+   tail -f ~/.openvia/logs/app.log
+   ```
 
 ### 配置优先级
 

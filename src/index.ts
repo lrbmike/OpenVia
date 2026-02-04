@@ -19,10 +19,10 @@ import {
   setConfigValue,
   getConfigValue,
   getSessionsDir,
+  getLogsDir,
   ensureConfigDir,
   type AppConfig,
 } from './config'
-
 const logger = new Logger('App')
 
 /** Global Configuration */
@@ -37,6 +37,7 @@ let botManager: BotManager
 async function startBotCommand(): Promise<void> {
   // Ensure config directory exists (sessions directory needed)
   ensureConfigDir()
+  Logger.setLogDir(getLogsDir())
 
   // Initialize BotManager
   botManager = new BotManager(handleMessage)
