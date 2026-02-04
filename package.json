@@ -53,6 +53,7 @@
     "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.29",
         "@larksuiteoapi/node-sdk": "^1.58.0",
+        "async-mutex": "^0.5.0",
         "grammy": "^1.21.1",
         "uuid": "^13.0.0",
         "zod": "^3.22.4"

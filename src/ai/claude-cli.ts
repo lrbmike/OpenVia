@@ -99,12 +99,18 @@ export async function stopClaudeClient() {
 /**
  * Send a message to Claude and get the response
  */
+import { RequestContext } from '../utils/context'
+
+/**
+ * Send a message to Claude and get the response
+ */
 export async function callClaude(
   input: string,
   _context: {
     skillResult?: { skill: string; result: unknown }
     config: ClaudeCliConfig
-  }
+  },
+  sdkContext?: RequestContext
 ): Promise<ClaudeResponse> {
   if (!claudeClient) {
     // This is a safety fallback, but in normal flow initClaudeClient 
@@ -112,18 +118,21 @@ export async function callClaude(
     throw new Error('Claude client not initialized. Please call initClaudeClient first.')
   }
 
-  if (!claudeClient) {
-    throw new Error('Failed to initialize Claude client')
-  }
-
-  if (!claudeClient) {
-    throw new Error('Failed to initialize Claude client')
-  }
-
   logger.info(`Calling Claude SDK with message: ${input.slice(0, 50)}...`)
 
   try {
-    const responseText = await claudeClient.sendMessage(input)
+    // We enforce sdkContext availability in Router, but for safety:
+    if (!sdkContext) {
+        logger.warn('No SDK Context provided to callClaude, permissions may fail.')
+        // We can't really mint a valid one here without channel specific callbacks.
+        // We will pass a dummy one or let it fail inside if it tries to use permissions.
+        // Actually, if we pass undefined, Typescript will complain.
+        // Let's explicitly cast or handle it.
+        // I'll throw error as it's required for the architecture now.
+        throw new Error('Internal Error: sdkContext is required for callClaude')
+    }
+
+    const responseText = await claudeClient.sendMessage(input, sdkContext)
     return {
       action: 'reply',
       message: responseText

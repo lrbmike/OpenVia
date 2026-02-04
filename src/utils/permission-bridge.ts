@@ -38,8 +38,8 @@ export class PermissionBridge {
    * Request permission from the user
    * Returns a promise that resolves to 'allow' or 'deny'
    */
-  async request(message: string): Promise<PermissionDecision> {
-    const context = getRequestContext()
+  async request(message: string, explicitContext?: RequestContext): Promise<PermissionDecision> {
+    const context = explicitContext || getRequestContext()
 
     if (!context) {
       this.logger.error('No request context found. Cannot request permission.')

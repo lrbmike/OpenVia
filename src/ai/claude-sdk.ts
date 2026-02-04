@@ -2,6 +2,8 @@ import { unstable_v2_createSession } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKSession, PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { buildCombinedSystemPrompt } from './prompts'
 import { PermissionBridge } from '../utils/permission-bridge'
+import { RequestContext } from '../utils/context'
+import { Mutex } from 'async-mutex'
 
 import type { AppConfig } from '../config'
 import { execSync } from 'node:child_process'
@@ -13,6 +15,8 @@ export class ClaudeSDKClient {
   private session: SDKSession | null = null
   private logger = console
   private permissionBridge = PermissionBridge.getInstance()
+  private mutex = new Mutex()
+  private currentContext: RequestContext | null = null
  
   constructor() {}
  
@@ -115,9 +119,14 @@ export class ClaudeSDKClient {
                  }
             }
             
-            // 3. Request Permission via Bridge (Telegram)
+            // 3. Request Permission via Bridge
             this.logger.info(`[Permission] Requesting approval for ${toolName}`)
             
+            if (!this.currentContext) {
+                 this.logger.error('[Permission] CRITICAL: No active request context in ClaudeSDKClient. Denying permission.')
+                 return { behavior: 'deny', message: 'Internal Error: Context lost', toolUseID: options.toolUseID }
+            }
+
             // Construct a readable message for the user
             let message = `⚠️ *Permission Request*\n\nTool: \`${toolName}\`\n`
             if (toolName === 'Bash') {
@@ -128,12 +137,13 @@ export class ClaudeSDKClient {
                 message += `Arguments: \`${JSON.stringify(toolInput).slice(0, 100)}...\``
             }
 
-            const decision = await this.permissionBridge.request(message)
+            // Pass the explicitly stored context to the bridge
+            const decision = await this.permissionBridge.request(message, this.currentContext)
             
             if (decision === 'allow') {
                  return { behavior: 'allow', toolUseID: options.toolUseID, updatedInput: toolInput }
             } else {
-                 return { behavior: 'deny', message: 'User denied permission via Telegram', toolUseID: options.toolUseID }
+                 return { behavior: 'deny', message: 'User denied permission', toolUseID: options.toolUseID }
             }
         }
       })
@@ -146,57 +156,64 @@ export class ClaudeSDKClient {
     }
   }
 
-  async sendMessage(message: string): Promise<string> {
+  async sendMessage(message: string, context: RequestContext): Promise<string> {
     if (!this.session) {
       throw new Error('Claude SDK session not initialized')
     }
 
-    await this.session.send(message)
+    return await this.mutex.runExclusive(async () => {
+        // Set context for this transaction
+        this.currentContext = context
+        
+        try {
+            await this.session!.send(message)
 
-    let fullResponse = ''
-    try {
-      // Stream the response
-      for await (const msg of this.session.stream()) {
-          this.logger.debug(`[ClaudeSDK] Stream Msg: ${JSON.stringify(msg)}`)
-          // Handle different message types from the SDK
-          switch (msg.type) {
-              case 'stream_event':
-                  if (msg.event.type === 'content_block_delta' && msg.event.delta.type === 'text_delta') {
-                      fullResponse += msg.event.delta.text
-                  }
-                  break;
-              
-              case 'assistant':
-                  // Assistant event handling (full block accumulated in result)
-                  break;
+            let fullResponse = ''
+            // Stream the response
+            for await (const msg of this.session!.stream()) {
+                this.logger.debug(`[ClaudeSDK] Stream Msg: ${JSON.stringify(msg)}`)
+                // Handle different message types from the SDK
+                switch (msg.type) {
+                    case 'stream_event':
+                        if (msg.event.type === 'content_block_delta' && msg.event.delta.type === 'text_delta') {
+                            fullResponse += msg.event.delta.text
+                        }
+                        break;
+                    
+                    case 'assistant':
+                        // Assistant event handling (full block accumulated in result)
+                        break;
 
-              case 'result':
-                  if (msg.subtype === 'success') {
-                      this.logger.debug('[ClaudeSDK] Result success')
-                      if (msg.result) {
-                          fullResponse = msg.result
-                      }
-                      return fullResponse 
-                  } else if (msg.subtype === 'error_during_execution') {
-                       this.logger.error('[ClaudeSDK] Execution error', msg)
-                       return `❌ Error during execution: ${JSON.stringify(msg)}`
-                  }
-                  break;
-              
-              case 'user':
-              case 'system':
-              case 'tool_progress':
-              case 'tool_use_summary':
-              case 'auth_status':
-                  break;
-          }
-      }
-    } catch (err) {
-      this.logger.error('[ClaudeSDK] Error streaming response:', err)
-      throw err
-    }
-
-    return fullResponse
+                    case 'result':
+                        if (msg.subtype === 'success') {
+                            this.logger.debug('[ClaudeSDK] Result success')
+                            if (msg.result) {
+                                fullResponse = msg.result
+                            }
+                            return fullResponse 
+                        } else if (msg.subtype === 'error_during_execution') {
+                            this.logger.error('[ClaudeSDK] Execution error', msg)
+                            return `❌ Error during execution: ${JSON.stringify(msg)}`
+                        }
+                        break;
+                    
+                    case 'user':
+                    case 'system':
+                    case 'tool_progress':
+                    case 'tool_use_summary':
+                    case 'auth_status':
+                        break;
+                }
+            }
+            return fullResponse
+        } catch (err) {
+            this.logger.error('[ClaudeSDK] Error streaming response:', err)
+            throw err
+        } finally {
+            // Clear context
+            this.currentContext = null
+        }
+    })
   }
 
   async stop() {

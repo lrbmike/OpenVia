@@ -68,7 +68,10 @@ export async function handleMessage(
     session.history.push({ role: 'user', content: input })
 
     // Call Claude SDK (SDK handles tool calls and multi-step reasoning internally)
-    const response = await callClaude(input, context)
+    // Pass the raw context (RequestContext) to callClaude so it can pass it to sendMessage
+    const sdkContext = { userId, channelId, sendReply }
+    // @ts-ignore - Updating callClaude signature next
+    const response = await callClaude(input, context, sdkContext)
 
     if (response.action === 'reply' && response.message) {
         await sendReply(response.message)
