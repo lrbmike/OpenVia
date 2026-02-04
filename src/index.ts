@@ -6,7 +6,7 @@
  * v0.0.1: Initial OpenVia release
  */
 
-import { startBot, stopBot } from './bot'
+import { BotManager } from './bot'
 import { initRouter, handleMessage } from './orchestrator'
 import { initPolicy } from './orchestrator/policy'
 import { initClaudeClient, stopClaudeClient } from './ai'
@@ -28,6 +28,9 @@ const logger = new Logger('App')
 /** Global Configuration */
 let config: AppConfig
 
+/** Global Bot Manager */
+let botManager: BotManager
+
 /**
  * Start Bot Command
  */
@@ -35,13 +38,14 @@ async function startBotCommand(): Promise<void> {
   // Ensure config directory exists (sessions directory needed)
   ensureConfigDir()
 
-  const token = config.telegram.botToken
-  if (!token) {
-    logger.error('TELEGRAM_BOT_TOKEN is not set')
-    logger.info('Please set it via:')
-    logger.info('  - Environment variable: TELEGRAM_BOT_TOKEN=xxx')
-    logger.info('  - Config file: openvia config set telegram.botToken xxx')
-    process.exit(1)
+  // Initialize BotManager
+  botManager = new BotManager(handleMessage)
+
+  // Validate at least one channel is configured
+  if (!config.adapters.default && !config.telegram.botToken) {
+     logger.error('No communication channel configured.')
+     logger.info('Please set TELEGRAM_BOT_TOKEN or configure other adapters.')
+     process.exit(1)
   }
 
   showBanner()
@@ -67,8 +71,8 @@ async function startBotCommand(): Promise<void> {
     timeout: config.claude.timeout,
   })
 
-  // Start Telegram Bot
-  await startBot(token, handleMessage)
+  // Start Bots
+  await botManager.startAll(config)
 }
 
 /**
@@ -146,7 +150,9 @@ function configCommand(args: string[]): void {
  */
 async function shutdown(): Promise<void> {
   logger.info('Shutting down...')
-  await stopBot()
+  if (botManager) {
+      await botManager.stopAll()
+  }
   stopClaudeClient()
   logger.info('Goodbye!')
   process.exit(0)

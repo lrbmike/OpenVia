@@ -86,20 +86,43 @@ This creates a configuration directory at `~/.openvia/`.
 
 ### 2. Configure Token
 
-```bash
+````bash
 # Option A: Environment Variable
 export TELEGRAM_BOT_TOKEN="your-bot-token"
 
 # Option B: Config File
 openvia config set telegram.botToken "your-bot-token"
-```
 
+### Configuration Example (`~/.openvia/config.json`)
+
+```json
+{
+  "adapters": {
+    "default": "telegram",
+    "telegram": {
+      "botToken": "your-telegram-bot-token",
+      "allowedUserIds": [123456789]
+    },
+    "feishu": {
+      "appId": "cli_a4d...",
+      "appSecret": "your-app-secret",
+      "wsEndpoint": "wss://..."
+    }
+  },
+  "claude": {
+    "model": "claude-3-5-sonnet-20240620",
+    "timeout": 120000
+  }
+}
+````
+
+````
 ### 3. Ensure Claude CLI is Installed
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 claude  # Complete authentication
-```
+````
 
 ### 4. Run the Gateway
 

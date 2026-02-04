@@ -81,20 +81,43 @@ openvia init
 
 ### 2. 配置 Token
 
-```bash
+````bash
 # 方式一：环境变量
 export TELEGRAM_BOT_TOKEN="your-bot-token"
 
 # 方式二：配置文件
 openvia config set telegram.botToken "your-bot-token"
-```
 
+### 配置文件示例 (`~/.openvia/config.json`)
+
+```json
+{
+  "adapters": {
+    "default": "telegram",
+    "telegram": {
+      "botToken": "your-telegram-bot-token",
+      "allowedUserIds": [123456789]
+    },
+    "feishu": {
+      "appId": "cli_a4d...",
+      "appSecret": "your-app-secret",
+      "wsEndpoint": "wss://..."
+    }
+  },
+  "claude": {
+    "model": "claude-3-5-sonnet-20240620",
+    "timeout": 120000
+  }
+}
+````
+
+````
 ### 3. 安装 Claude CLI
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 claude  # 完成登录认证
-```
+````
 
 ### 4. 运行网关
 

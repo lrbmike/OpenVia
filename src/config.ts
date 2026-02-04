@@ -20,7 +20,21 @@ const CONFIG_FILE = 'config.json'
 
 /** Application Configuration Type */
 export interface AppConfig {
-  telegram: {
+  adapters: {
+    default: string
+    telegram?: {
+      botToken: string
+      allowedUserIds?: number[]
+    }
+    feishu?: {
+      appId: string
+      appSecret: string
+      verificationToken?: string
+      encryptKey?: string
+      wsEndpoint?: string
+    }
+  }
+  telegram: { // Keeping for backward compatibility but mapped to adapters.telegram
     botToken: string
     allowedUserIds: number[]
   }
@@ -52,6 +66,12 @@ export interface CLIOptions {
  */
 export function getDefaultConfig(): AppConfig {
   return {
+    adapters: {
+        default: 'telegram',
+        telegram: {
+            botToken: '',
+        }
+    },
     telegram: {
       botToken: '',
       allowedUserIds: [],
@@ -163,14 +183,19 @@ function loadConfigFromFile(configPath?: string): Partial<AppConfig> {
 function loadConfigFromEnv(): Partial<AppConfig> {
   const config: Partial<AppConfig> = {}
 
-  // Telegram
+  // Telegram - Legacy & New
   if (process.env.TELEGRAM_BOT_TOKEN) {
     config.telegram = {
       botToken: process.env.TELEGRAM_BOT_TOKEN,
       allowedUserIds: config.telegram?.allowedUserIds || [],
     }
+    if (!config.adapters) config.adapters = { default: 'telegram' } // provisional default if setting via env
+    config.adapters.telegram = {
+        botToken: process.env.TELEGRAM_BOT_TOKEN
+    }
     logger.debug('Using TELEGRAM_BOT_TOKEN from environment')
   }
+  
   if (process.env.ALLOWED_USER_IDS) {
     const ids = process.env.ALLOWED_USER_IDS.split(',')
       .map((id) => parseInt(id.trim(), 10))
@@ -179,7 +204,23 @@ function loadConfigFromEnv(): Partial<AppConfig> {
       botToken: config.telegram?.botToken || '',
       allowedUserIds: ids,
     }
+    if (config.adapters?.telegram) {
+        config.adapters.telegram.allowedUserIds = ids
+    }
     logger.debug('Using ALLOWED_USER_IDS from environment')
+  }
+
+  // Feishu
+  if (process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET) {
+      if (!config.adapters) config.adapters = { default: 'feishu' } // Set default if providing feishu envs
+      config.adapters.feishu = {
+          appId: process.env.FEISHU_APP_ID,
+          appSecret: process.env.FEISHU_APP_SECRET,
+          verificationToken: process.env.FEISHU_VERIFICATION_TOKEN,
+          encryptKey: process.env.FEISHU_ENCRYPT_KEY,
+          wsEndpoint: process.env.FEISHU_WS_ENDPOINT
+      }
+      logger.debug('Using Feishu credentials from environment')
   }
 
   // Claude
