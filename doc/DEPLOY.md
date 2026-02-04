@@ -131,27 +131,33 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-# Working Directory: Recommended to be the project root
-WorkingDirectory=%h/workspaces/OpenVia
+# Recommended to run as a non-root user to ensure ~/.openvia/ configuration is accessible
+User=lrbmike
+# Working Directory: Set to the project root or the directory where the binary is located
+WorkingDirectory=/home/lrbmike/workspaces/OpenVia
 # Environment: PATH must contain paths to node, bun, and claude
-Environment="PATH=%h/.local/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Note: systemd does not automatically load .bashrc, so PATH must be explicitly defined here
+Environment="PATH=/home/lrbmike/.local/bin:/home/lrbmike/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Path to the executable
-ExecStart=%h/workspaces/OpenVia/dist/openvia
+ExecStart=/home/lrbmike/workspaces/OpenVia/dist/openvia
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-> [!TIP]
+> [!IMPORTANT]
 >
-> 1. `%h` is a systemd specifier that expands to the user's home directory
->    (e.g., `/home/your-user`).
-> 2. `WorkingDirectory` should be set to the directory where OpenVia is located.
-> 3. If the binary compiled via Bun cannot locate `claude`, you can manually
->    specify the path using the `CLAUDE_EXECUTABLE_PATH` environment variable.
+> 1. **User Setting**: If you run as `User=root`, OpenVia will look for
+>    configuration in `/root/.openvia/`. If you developed as a regular user
+>    (e.g., `lrbmike`), update `User` accordingly.
+> 2. **Rebuild**: If you have recently modified the source code (e.g., added
+>    Feishu support), ensure you run `bun run build` to regenerate the
+>    `dist/openvia` binary.
+> 3. **Absolute Paths**: It is recommended to use absolute paths (e.g.,
+>    `/home/lrbmike/...`) instead of `%h` in the `Service` configuration to
+>    avoid parsing issues in some systemd versions.
 
 Manage the service:
 

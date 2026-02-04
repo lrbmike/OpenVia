@@ -130,27 +130,33 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-# 运行目录：建议设置为源码根目录
-WorkingDirectory=%h/workspaces/OpenVia
+[Service]
+Type=simple
+# 建议使用普通用户运行，以确保能读取到 ~/.openvia/ 目录下的配置
+User=lrbmike
+# 运行目录：设置为源码根目录或二进制文件所在目录
+WorkingDirectory=/home/lrbmike/workspaces/OpenVia
 # 注入环境变量：PATH 必须包含 node, bun 以及 claude 的路径
-Environment="PATH=%h/.local/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# 注意：systemd 不会自动加载 .bashrc，必须在这里明确指定 PATH
+Environment="PATH=/home/lrbmike/.local/bin:/home/lrbmike/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # 执行程序路径
-ExecStart=%h/workspaces/OpenVia/dist/openvia
+ExecStart=/home/lrbmike/workspaces/OpenVia/dist/openvia
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-> [!TIP]
+> [!IMPORTANT]
 >
-> 1. `%h` 是 systemd 的占位符，会自动展开为当前用户的家目录（如
->    `/home/your-user`）。
-> 2. `WorkingDirectory` 应该设置为你存放 OpenVia 源码或二进制文件的目录。
-> 3. 如果通过 Bun 编译为单文件后无法定位 `claude`，可以通过配置
->    `CLAUDE_EXECUTABLE_PATH` 环境变量手动指定路径。
+> 1. **User 设置**: 如果你使用 `User=root`运行，OpenVia 会尝试从
+>    `/root/.openvia/` 读取配置。如果你在开发时使用的是普通用户（如
+>    `lrbmike`），请将 `User` 修改为对应的用户名。
+> 2. **重新编译**: 如果你最近修改了代码（如增加了飞书支持），请务必执行
+>    `bun run build` 重新生成 `dist/openvia`。
+> 3. **绝对路径**: 在 `Service` 配置中，建议使用绝对路径（如
+>    `/home/lrbmike/...`）代替 `%h`，以避免某些 systemd 版本中的解析问题。
 
 管理服务：
 

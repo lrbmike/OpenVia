@@ -42,9 +42,12 @@ async function startBotCommand(): Promise<void> {
   botManager = new BotManager(handleMessage)
 
   // Validate at least one channel is configured
-  if (!config.adapters.default && !config.telegram.botToken) {
+  const hasTelegram = config.adapters.telegram?.botToken || config.telegram.botToken
+  const hasFeishu = config.adapters.feishu?.appId && config.adapters.feishu?.appSecret
+  
+  if (!hasTelegram && !hasFeishu) {
      logger.error('No communication channel configured.')
-     logger.info('Please set TELEGRAM_BOT_TOKEN or configure other adapters.')
+     logger.info('Please set TELEGRAM_BOT_TOKEN or FEISHU_APP_ID/APP_SECRET.')
      process.exit(1)
   }
 
