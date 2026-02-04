@@ -177,7 +177,12 @@ Location: `~/.openvia/config.json`
     "model": "claude-sonnet-4-5-20250929",
     "timeout": 120000,
     "permissionMode": "default",
-    "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"],
+    "permissionMode": "default",
+    // List of commands that require explicit user confirmation.
+    // NOTE: Configuring this field OVERWRITES the default list, it does not append.
+    // Default list: ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown", "mkfs", "chmod", "chown", "wget", "curl", ">", ">>", "&", "|"]
+    "shellConfirmList": ["rm", "mv", "sudo", "su", ">"],
+
     "systemPrompt": "Always answer in Chinese"
   },
   "logging": {

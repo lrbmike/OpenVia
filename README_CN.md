@@ -107,7 +107,12 @@ openvia config set telegram.botToken "your-bot-token"
   "claude": {
     "model": "claude-3-5-sonnet-20240620",
     "timeout": 120000,
-    "systemPrompt": "Always answer in Chinese (请用中文回答)"
+    "systemPrompt": "Always answer in Chinese (请用中文回答)",
+    // 需确认的敏感命令列表。
+    // 注意：配置此项会【覆盖/Overwrite】默认列表，而不是追加。
+    // 默认值包含: rm, mv, sudo, su, dd, reboot, shutdown, mkfs, chmod, chown, wget, curl, >, >>, &, |
+    "shellConfirmList": ["rm", "mv", "sudo", ">"]
+
   }
 }
 ````

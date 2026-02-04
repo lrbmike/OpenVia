@@ -108,15 +108,24 @@ export class ClaudeSDKClient {
                  return { behavior: 'allow', toolUseID: options.toolUseID, updatedInput: toolInput }
             }
  
-            // 2. Shell Whitelist Check
-            if (toolName === 'Bash' && config.shellWhitelist) {
-                 const command = (toolInput.command || '').trim()
-                 const whitelist = config.shellWhitelist
-                 const cmdName = command.split(' ')[0]
-                 if (whitelist.includes(cmdName)) {
-                     this.logger.info(`[Permission] Auto-allowing whitelisted command: ${cmdName}`)
-                     return { behavior: 'allow', toolUseID: options.toolUseID, updatedInput: toolInput }
-                 }
+            // 2. Shell Permission Policy (Confirmation List Mode)
+            if (toolName === 'Bash') {
+                const command = (toolInput.command || '').trim()
+                
+                // Allow everything EXCEPT commands that strictly require confirmation
+                const confirmList = config.shellConfirmList || []
+                const requiresConfirmation = confirmList.some(item => {
+                    // Simple inclusion check. 
+                    return command.includes(item)
+                })
+
+                if (!requiresConfirmation) {
+                    this.logger.info(`[Permission] Auto-allowing command (not in confirm list): ${command.slice(0, 30)}...`)
+                    return { behavior: 'allow', toolUseID: options.toolUseID, updatedInput: toolInput }
+                } else {
+                     this.logger.warn(`[Permission] Command matched confirm list: ${command}`)
+                     // Fall through to manual permission request
+                }
             }
             
             // 3. Request Permission via Bridge

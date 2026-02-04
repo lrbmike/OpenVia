@@ -44,7 +44,7 @@ export interface AppConfig {
     model: string
     timeout: number
     permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions'
-    shellWhitelist: string[]
+    shellConfirmList: string[]
     executablePath?: string
     systemPrompt?: string
   }
@@ -83,7 +83,7 @@ export function getDefaultConfig(): AppConfig {
       model: 'claude-sonnet-4-5-20250929',
       timeout: 120000,
       permissionMode: 'default',
-      shellWhitelist: ['ls', 'cat', 'pwd', 'git status', 'echo'],
+      shellConfirmList: ['rm', 'mv', 'sudo', 'su', 'dd', 'reboot', 'shutdown', 'mkfs', 'chmod', 'chown', 'wget', 'curl', '>', '>>', '&', '|'],
       executablePath: '',
     },
     logging: {
@@ -251,9 +251,9 @@ function loadConfigFromEnv(): Partial<AppConfig> {
       logger.debug('Using CLAUDE_PERMISSION_MODE from environment')
     }
   }
-  if (process.env.SHELL_WHITELIST) {
-    config.claude = { ...config.claude, shellWhitelist: process.env.SHELL_WHITELIST.split(',').map((cmd) => cmd.trim()) } as any
-    logger.debug('Using SHELL_WHITELIST from environment')
+  if (process.env.SHELL_CONFIRM_LIST) {
+    config.claude = { ...config.claude, shellConfirmList: process.env.SHELL_CONFIRM_LIST.split(',').map((cmd) => cmd.trim()) } as any
+    logger.debug('Using SHELL_CONFIRM_LIST from environment')
   }
   if (process.env.CLAUDE_EXECUTABLE_PATH) {
     config.claude = { ...config.claude, executablePath: process.env.CLAUDE_EXECUTABLE_PATH } as any
