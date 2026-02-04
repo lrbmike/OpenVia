@@ -190,35 +190,6 @@ export class FeishuChannel implements Channel {
               tag: 'lark_md',
               content: `${req.message}\n\n💡 **Tip**: You can also reply "ok" to allow or "no" to deny.`
             }
-          },
-          {
-            tag: 'action',
-            actions: [
-              {
-                tag: 'button',
-                text: {
-                  tag: 'plain_text',
-                  content: '✅ Allow'
-                },
-                type: 'primary',
-                value: {
-                  reqId: req.id,
-                  decision: 'allow'
-                }
-              },
-              {
-                tag: 'button',
-                text: {
-                  tag: 'plain_text',
-                  content: '❌ Deny'
-                },
-                type: 'danger',
-                value: {
-                  reqId: req.id,
-                  decision: 'deny'
-                }
-              }
-            ]
           }
         ]
       }
