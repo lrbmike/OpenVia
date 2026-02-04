@@ -188,7 +188,7 @@ export class FeishuChannel implements Channel {
             tag: 'div',
             text: {
               tag: 'lark_md',
-              content: req.message
+              content: `${req.message}\n\n💡 **Tip**: You can also reply "ok" to allow or "no" to deny.`
             }
           },
           {
