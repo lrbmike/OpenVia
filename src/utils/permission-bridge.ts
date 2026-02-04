@@ -1,11 +1,13 @@
 import { Logger } from './logger'
 import { v4 as uuidv4 } from 'uuid'
+import { getRequestContext, RequestContext } from '../utils/context'
 
 export type PermissionDecision = 'allow' | 'deny'
 
-interface PendingRequest {
+export interface PendingRequest {
   id: string
   message: string
+  context: RequestContext
   resolve: (decision: PermissionDecision) => void
 }
 
@@ -25,7 +27,7 @@ export class PermissionBridge {
   }
 
   /**
-   * Register the UI handler (e.g., Telegram Bot)
+   * Register the UI handler (e.g., BotManager)
    */
   registerHandler(handler: (req: PendingRequest) => Promise<void>) {
     this.handler = handler
@@ -37,6 +39,13 @@ export class PermissionBridge {
    * Returns a promise that resolves to 'allow' or 'deny'
    */
   async request(message: string): Promise<PermissionDecision> {
+    const context = getRequestContext()
+
+    if (!context) {
+      this.logger.error('No request context found. Cannot request permission.')
+      return 'deny'
+    }
+
     if (!this.handler) {
       this.logger.warn('No handler registered, defaulting to DENY')
       return 'deny'
@@ -47,6 +56,7 @@ export class PermissionBridge {
       const request: PendingRequest = {
         id,
         message,
+        context,
         resolve: (decision) => {
           this.pendingRequests.delete(id)
           resolve(decision)

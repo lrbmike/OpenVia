@@ -2,6 +2,7 @@ import { callClaude, ensureWorkDir } from '../ai'
 import { getSession } from './session'
 import { isUserAllowed, logAudit } from './policy'
 import { Logger } from '../utils/logger'
+import { runWithContext } from '../utils/context'
 
 const logger = new Logger('Router')
 
@@ -37,42 +38,45 @@ export function getRouterConfig(): RouterConfig {
 export async function handleMessage(
   input: string,
   userId: string,
+  channelId: string,
   sendReply: (text: string) => Promise<void>
 ): Promise<void> {
-  logger.info(`Handling message from ${userId}: ${input.slice(0, 50)}...`)
+  logger.info(`Handling message from ${userId} via ${channelId}: ${input.slice(0, 50)}...`)
 
-  // Permission check
-  if (!isUserAllowed(userId)) {
-    logAudit({ userId, action: 'message', result: 'denied', reason: 'User not in whitelist' })
-    await sendReply("Sorry, you don't have permission to use this Bot.")
-    return
-  }
-
-  logAudit({ userId, action: 'message', result: 'allowed' })
-
-  const session = getSession(userId, userId)
-
-  // Construct initial Context
-  const context = {
-    history: session.history, 
-    config: {
-      workDir: routerConfig.workDir,
-      timeout: routerConfig.timeout
+  return runWithContext({ userId, channelId, sendReply }, async () => {
+    // Permission check
+    if (!isUserAllowed(userId)) {
+      logAudit({ userId, action: 'message', result: 'denied', reason: 'User not in whitelist' })
+      await sendReply("Sorry, you don't have permission to use this Bot.")
+      return
     }
-  }
 
-  // Add user message to history
-  session.history.push({ role: 'user', content: input })
+    logAudit({ userId, action: 'message', result: 'allowed' })
 
-  // Call Claude SDK (SDK handles tool calls and multi-step reasoning internally)
-  const response = await callClaude(input, context)
+    const session = getSession(userId, userId)
 
-  if (response.action === 'reply' && response.message) {
-      await sendReply(response.message)
-      session.history.push({ role: 'assistant', content: response.message })
-  } else if (response.action === 'error') {
-      await sendReply(`❌ Error: ${response.message}`)
-  } else {
-      await sendReply('(No content returned)')
-  }
+    // Construct initial Context
+    const context = {
+      history: session.history, 
+      config: {
+        workDir: routerConfig.workDir,
+        timeout: routerConfig.timeout
+      }
+    }
+
+    // Add user message to history
+    session.history.push({ role: 'user', content: input })
+
+    // Call Claude SDK (SDK handles tool calls and multi-step reasoning internally)
+    const response = await callClaude(input, context)
+
+    if (response.action === 'reply' && response.message) {
+        await sendReply(response.message)
+        session.history.push({ role: 'assistant', content: response.message })
+    } else if (response.action === 'error') {
+        await sendReply(`❌ Error: ${response.message}`)
+    } else {
+        await sendReply('(No content returned)')
+    }
+  })
 }

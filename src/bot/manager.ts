@@ -1,18 +1,18 @@
-
 import { Channel } from './types'
 import { Logger } from '../utils/logger'
 import { AppConfig } from '../config'
 import { TelegramChannel } from './telegram'
 import { FeishuChannel } from './feishu'
+import { PermissionBridge } from '../utils/permission-bridge'
 
 const logger = new Logger('BotManager')
 
 export class BotManager {
   private channels: Channel[] = []
-  private messageHandler: (input: string, userId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
+  private messageHandler: (input: string, userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
 
   constructor(
-      messageHandler: (input: string, userId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
+      messageHandler: (input: string, userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
   ) {
     this.messageHandler = messageHandler
   }
@@ -22,7 +22,21 @@ export class BotManager {
   }
 
   public async startAll(config: AppConfig) {
+      // Register Permission Handler
+      PermissionBridge.getInstance().registerHandler(async (req) => {
+          const targetChannelId = req.context.channelId
+          const channel = this.channels.find(c => c.id === targetChannelId)
+          
+          if (channel && channel.handlePermissionRequest) {
+              logger.info(`Dispatching permission request ${req.id} to channel ${targetChannelId}`)
+              await channel.handlePermissionRequest(req)
+          } else {
+              logger.warn(`Target channel ${targetChannelId} not found or does not support permissions`)
+          }
+      })
+
       const activeAdapter = config.adapters.default || 'telegram'
+      logger.info(`Starting active adapter: ${activeAdapter}`)
 
       // 1. Telegram
       if (activeAdapter === 'telegram' && config.adapters.telegram?.botToken) {
@@ -31,7 +45,7 @@ export class BotManager {
       }
 
       // 2. Feishu
-      if (activeAdapter === 'feishu' && config.adapters.feishu?.appId && config.adapters.feishu?.appSecret) {
+      else if (activeAdapter === 'feishu' && config.adapters.feishu?.appId && config.adapters.feishu?.appSecret) {
           const feishu = new FeishuChannel(
               config.adapters.feishu.appId,
               config.adapters.feishu.appSecret,

@@ -10,13 +10,21 @@ const LEVELS: Record<LogLevel, number> = {
   error: 3,
 }
 
-const CURRENT_LEVEL_NAME = (process.env.LOG_LEVEL?.toLowerCase() || 'info') as LogLevel
-const CURRENT_LEVEL = LEVELS[CURRENT_LEVEL_NAME] ?? LEVELS.info
-
 export class Logger {
   private static logDir: string | null = null
+  private static currentLevel: number = LEVELS.info
 
   constructor(private module: string) {}
+
+  /**
+   * Set the log level dynamically
+   */
+  public static setLevel(level: LogLevel): void {
+    const numericLevel = LEVELS[level]
+    if (numericLevel !== undefined) {
+      this.currentLevel = numericLevel
+    }
+  }
 
   /**
    * Set the directory for log files.
@@ -35,7 +43,7 @@ export class Logger {
   }
 
   private write(level: LogLevel, message: string, ...args: any[]) {
-    if (CURRENT_LEVEL <= LEVELS[level]) {
+    if (Logger.currentLevel <= LEVELS[level]) {
       const formatted = this.format(level, message)
       const output = args.length > 0 ? `${formatted} ${JSON.stringify(args)}` : formatted
       
@@ -78,4 +86,10 @@ export class Logger {
   error(message: string, ...args: any[]) {
     this.write('error', message, ...args)
   }
+}
+
+// Initialize from environment variable if present
+const envLevel = process.env.LOG_LEVEL?.toLowerCase() as LogLevel
+if (envLevel && LEVELS[envLevel] !== undefined) {
+  Logger.setLevel(envLevel)
 }

@@ -227,3 +227,11 @@ bun run build:all
 ## License
 
 MIT
+
+## Roadmap
+
+1. **Concurrent Multi-platform Support**: Currently, OpenVia activates a single
+   default channel (Telegram or Feishu) at startup. Future architecture will
+   support simultaneous listening on multiple platforms.
+2. **Plugin System**: Support dynamic loading of custom user Skills.
+3. **Web Dashboard**: Visual configuration management and session viewer.

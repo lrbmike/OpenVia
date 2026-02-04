@@ -1,8 +1,8 @@
-
 import * as lark from '@larksuiteoapi/node-sdk'
 import { Channel } from './types'
 import { Logger } from '../utils/logger'
 import { isUserAllowed, logAudit } from '../orchestrator/policy'
+import { PermissionBridge, PendingRequest } from '../utils/permission-bridge'
 
 const logger = new Logger('FeishuChannel')
 
@@ -29,7 +29,7 @@ export class FeishuChannel implements Channel {
   }
 
   async start(
-    messageHandler: (input: string, userId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
+    messageHandler: (input: string, userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
   ): Promise<void> {
     logger.info('Starting Feishu bot...')
 
@@ -95,10 +95,33 @@ export class FeishuChannel implements Channel {
             }
 
             // Notice: We don't await messageHandler here to return to Feishu quickly
-            messageHandler(text, userId, sendReply).catch(error => {
+            // Pass this.id ('feishu') as channelId
+            messageHandler(text, userId, this.id, sendReply).catch(error => {
                 logger.error('Error handling message:', error)
                 sendReply('❌ An error occurred while processing your request.')
             })
+        },
+        // Handle Card Action (Button Clicks)
+        'card.action.trigger': async (data: any) => {
+             const action = data.action
+             const operatorId = data.operator.open_id
+             logger.info(`[Feishu] Received card action from ${operatorId}: ${JSON.stringify(action)}`)
+             
+             if (!action.value || !action.value.reqId) {
+                 return { toast: { type: 'error', content: 'Invalid action' } }
+             }
+
+             const reqId = action.value.reqId
+             const decision = action.value.decision // 'allow' or 'deny'
+             
+             const bridge = PermissionBridge.getInstance()
+             if (decision === 'allow') {
+                 bridge.resolveRequest(reqId, 'allow')
+                 return { toast: { type: 'success', content: 'Allowed ✅' } }
+             } else {
+                 bridge.resolveRequest(reqId, 'deny')
+                  return { toast: { type: 'success', content: 'Denied ❌' } }
+             }
         }
     })
 
@@ -107,5 +130,82 @@ export class FeishuChannel implements Channel {
 
   async stop(): Promise<void> {
     logger.info('Stopping Feishu bot...')
+  }
+
+  /**
+   * Handle Permission Request via Feishu Card
+   */
+  async handlePermissionRequest(req: PendingRequest): Promise<void> {
+     const userId = req.context.userId
+     
+     // Construct Interactive Card
+     // https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/create
+     const cardContent = {
+        config: {
+          wide_screen_mode: true
+        },
+        header: {
+          title: {
+            tag: 'plain_text',
+            content: '⚠️ Permission Request'
+          },
+          template: 'orange'
+        },
+        elements: [
+          {
+            tag: 'div',
+            text: {
+              tag: 'lark_md',
+              content: req.message
+            }
+          },
+          {
+            tag: 'action',
+            actions: [
+              {
+                tag: 'button',
+                text: {
+                  tag: 'plain_text',
+                  content: '✅ Allow'
+                },
+                type: 'primary',
+                value: {
+                  reqId: req.id,
+                  decision: 'allow'
+                }
+              },
+              {
+                tag: 'button',
+                text: {
+                  tag: 'plain_text',
+                  content: '❌ Deny'
+                },
+                type: 'danger',
+                value: {
+                  reqId: req.id,
+                  decision: 'deny'
+                }
+              }
+            ]
+          }
+        ]
+      }
+
+      try {
+          // Verify user type, defaulting to open_id. Only send to the requester.
+          await this.client.im.message.create({
+              params: {
+                  receive_id_type: 'open_id' 
+              },
+              data: {
+                  receive_id: userId,
+                  msg_type: 'interactive',
+                  content: JSON.stringify(cardContent)
+              }
+          })
+          logger.info(`Sent permission card ${req.id} to user ${userId}`)
+      } catch (e) {
+          logger.error(`Failed to send permission card to ${userId}`, e)
+      }
   }
 }

@@ -172,6 +172,15 @@ async function main(): Promise<void> {
   // Load Config
   config = loadConfig(cli.options)
 
+  // Apply log level from config
+  if (config.logging.level) {
+    Logger.setLevel(config.logging.level)
+  }
+  // Verbose flag forces debug level
+  if (config.logging.verbose) {
+    Logger.setLevel('debug')
+  }
+
   // Dispatch based on command
   switch (cli.command) {
     case 'help':

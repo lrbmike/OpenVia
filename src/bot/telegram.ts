@@ -2,10 +2,10 @@
  * Telegram Bot Communication Layer
  */
 import { Bot, Context, GrammyError, HttpError } from 'grammy'
-import { isUserAllowed, logAudit, getAllowedUsers } from '../orchestrator/policy'
+import { isUserAllowed, logAudit } from '../orchestrator/policy'
 import { Logger } from '../utils/logger'
 import { Channel } from './types'
-import { PermissionBridge } from '../utils/permission-bridge'
+import { PermissionBridge, PendingRequest } from '../utils/permission-bridge'
 import { InlineKeyboard } from 'grammy'
 
 const logger = new Logger('TelegramChannel')
@@ -21,7 +21,7 @@ export class TelegramChannel implements Channel {
   }
 
   async start(
-    messageHandler: (input: string, userId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
+    messageHandler: (input: string, userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
   ): Promise<void> {
     if (!this.token) {
       throw new Error('Telegram bot token not provided')
@@ -30,27 +30,7 @@ export class TelegramChannel implements Channel {
     logger.info('Starting Telegram bot...')
     this.bot = new Bot(this.token)
 
-    // 1. Register Permission Handler
-    PermissionBridge.getInstance().registerHandler(async (req) => {
-      const adminIds = getAllowedUsers()
-      
-      const keyboard = new InlineKeyboard()
-          .text('✅ Allow', `perm:allow:${req.id}`)
-          .text('❌ Deny', `perm:deny:${req.id}`)
-
-      if (this.bot) {
-          for (const chatId of adminIds) {
-              try {
-                  await this.bot.api.sendMessage(chatId, req.message, {
-                      parse_mode: 'Markdown',
-                      reply_markup: keyboard
-                  })
-              } catch (e) {
-                  logger.error(`Failed to send permission request to ${chatId}`, e)
-              }
-          }
-      }
-    })
+    // 1. Register Permission Handler - REMOVED (Handled by BotManager now)
 
     // 2. Handle Callback Queries (Button Clicks)
     this.bot.on('callback_query:data', async (ctx) => {
@@ -148,7 +128,8 @@ export class TelegramChannel implements Channel {
       await ctx.replyWithChatAction('typing')
 
       // Handle message asynchronously
-      messageHandler(text, userId, async (replyText) => {
+      // Pass this.id ('telegram') as channelId
+      messageHandler(text, userId, this.id, async (replyText) => {
         await this.sendLongMessage(ctx, replyText)
       }).catch((error) => {
         logger.error('Error handling message:', error)
@@ -171,6 +152,33 @@ export class TelegramChannel implements Channel {
       await this.bot.stop()
       this.bot = null
     }
+  }
+
+  /**
+   * Handle Permission Request (Called by BotManager)
+   */
+  async handlePermissionRequest(req: PendingRequest): Promise<void> {
+      if (!this.bot) {
+          logger.error('Cannot handle permission request: Bot not initialized')
+          return
+      }
+
+      // ONLY send to the user who initiated the request
+      const userId = req.context.userId
+      
+      const keyboard = new InlineKeyboard()
+          .text('✅ Allow', `perm:allow:${req.id}`)
+          .text('❌ Deny', `perm:deny:${req.id}`)
+
+      try {
+          await this.bot.api.sendMessage(userId, req.message, {
+              parse_mode: 'Markdown',
+              reply_markup: keyboard
+          })
+          logger.info(`Sent permission request ${req.id} to user ${userId}`)
+      } catch (e) {
+          logger.error(`Failed to send permission request to ${userId}`, e)
+      }
   }
 
   private async sendLongMessage(ctx: Context, text: string): Promise<void> {
