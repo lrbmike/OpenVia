@@ -51,9 +51,11 @@ export class ClaudeSDKClient {
     return undefined
   }
 
-  async initialize(config: AppConfig['claude']) {
+  async initialize(config: AppConfig['claude'], workDir?: string) {
     this.logger.info('[ClaudeSDK] Initializing Claude Agent SDK...')
     
+    const cwd = workDir || process.cwd()
+
     const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
       this.logger.warn('[ClaudeSDK] ANTHROPIC_API_KEY is missing from both config and env.')
@@ -68,6 +70,17 @@ export class ClaudeSDKClient {
     if (config.baseUrl) {
       this.logger.info(`[ClaudeSDK] Config - Base URL: ${config.baseUrl}`)
       process.env.ANTHROPIC_BASE_URL = config.baseUrl
+    }
+
+    // Force switch process CWD to ensure SDK/Child Process inherits it correctly
+    // The SDK's 'cwd' option seems to be ignored in some versions/environments
+    if (process.cwd() !== cwd) {
+        try {
+            this.logger.info(`[ClaudeSDK] Force switching process CWD from "${process.cwd()}" to "${cwd}"`)
+            process.chdir(cwd)
+        } catch (err) {
+            this.logger.error(`[ClaudeSDK] Failed to change process CWD: ${err}`)
+        }
     }
 
     try {
@@ -87,6 +100,11 @@ export class ClaudeSDKClient {
             ANTHROPIC_BASE_URL: config.baseUrl || process.env.ANTHROPIC_BASE_URL,
             CLAUDE_MODEL: config.model,
         },
+        // Explicitly set the working directory for the session
+        // @ts-ignore: SDK types definition is outdated, but cwd is supported
+        cwd: cwd,
+        // Enable loading of user settings (including skills) and project settings
+        settingSources: ['user', 'project'],
         // System Prompt Injection
         // We use the 'preset' type to retain Claude Code's default coding capabilities
         // and APPEND our OpenVia context + User custom prompt.

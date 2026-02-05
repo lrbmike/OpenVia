@@ -23,10 +23,12 @@ interface SessionEntry {
 export class ClaudeSessionManager {
   private sessions: Map<string, SessionEntry> = new Map()
   private config: AppConfig['claude']
+  private workDir?: string
   private cleanupInterval: ReturnType<typeof setInterval> | null = null
 
-  constructor(config: AppConfig['claude']) {
+  constructor(config: AppConfig['claude'], workDir?: string) {
     this.config = config
+    this.workDir = workDir
     
     // 启动定时清理任务（每 5 分钟检查一次）
     this.cleanupInterval = setInterval(() => {
@@ -52,7 +54,8 @@ export class ClaudeSessionManager {
     // 创建新 Session
     logger.info(`[SessionManager] Creating new session for user: ${userId}`)
     const client = new ClaudeSDKClient()
-    await client.initialize(this.config)
+    // 传递 workDir (sessions 目录)
+    await client.initialize(this.config, this.workDir)
 
     entry = {
       client,

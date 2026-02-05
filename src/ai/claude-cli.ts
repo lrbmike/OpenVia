@@ -80,7 +80,7 @@ export async function initClaudeClient(config: AppConfig['claude'], workDir?: st
   
   await ensureWorkDir(cwd)
   
-  sessionManager = new ClaudeSessionManager(config)
+  sessionManager = new ClaudeSessionManager(config, cwd)
   
   logger.info('[Claude] Session Manager initialized.')
 }
