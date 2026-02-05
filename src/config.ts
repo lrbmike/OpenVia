@@ -83,7 +83,7 @@ export function getDefaultConfig(): AppConfig {
       model: 'claude-sonnet-4-5-20250929',
       timeout: 120000,
       permissionMode: 'default',
-      shellConfirmList: ['rm', 'mv', 'sudo', 'su', 'dd', 'reboot', 'shutdown', 'mkfs', 'chmod', 'chown', 'wget', 'curl', '>', '>>', '&', '|'],
+      shellConfirmList: ['rm', 'mv', 'sudo', 'su', 'dd', 'reboot', 'shutdown', 'mkfs', 'chmod', 'chown', 'wget', 'curl', '>', '>>', '&'],
       executablePath: '',
     },
     logging: {
