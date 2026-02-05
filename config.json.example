@@ -9,7 +9,7 @@
     "model": "claude-3-5-sonnet-20241022",
     "timeout": 120000,
     "permissionMode": "default",
-    "shellWhitelist": ["ls", "cat", "pwd", "git status", "echo"]
+    "SHELL_CONFIRM_LIST": []
   },
   "logging": {
     "level": "info",

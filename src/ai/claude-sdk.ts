@@ -104,7 +104,8 @@ export class ClaudeSDKClient {
             const toolInput = input as any
             
              // 1. Auto-allow read-only tools if desired
-            if (['Read', 'Glob', 'Grep', 'LS', 'View'].includes(toolName)) {
+            // Added WebSearch/WebFetch as they are essentially reading information
+            if (['Read', 'Glob', 'Grep', 'LS', 'View', 'WebSearch', 'WebFetch'].includes(toolName)) {
                  return { behavior: 'allow', toolUseID: options.toolUseID, updatedInput: toolInput }
             }
  
