@@ -94,6 +94,7 @@ export class AgentGateway {
     // 迭代处理（支持多轮工具调用）
     for (let iteration = 0; iteration < this.config.maxIterations!; iteration++) {
       console.log(`[Gateway] Iteration ${iteration + 1}`)
+      console.log(`[Gateway] Calling LLM with ${messages.length} messages...`)
       
       // 收集当前轮的工具调用
       const pendingToolCalls: Array<{ id: string; name: string; args: unknown }> = []
@@ -109,6 +110,7 @@ export class AgentGateway {
         toolResults,
         systemPrompt
       })) {
+        console.log(`[Gateway] Received LLM event: ${event.type}`)
         switch (event.type) {
           case 'text_delta':
             fullResponse += event.content

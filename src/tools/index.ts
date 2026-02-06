@@ -11,16 +11,20 @@ import { bashTool } from './bash'
 import { readTool } from './read'
 import { writeTool } from './write'
 import { editTool } from './edit'
+import { readSkillTool, listSkillsTool } from './skill'
 
 export { bashTool } from './bash'
 export { readTool } from './read'
 export { writeTool } from './write'
 export { editTool } from './edit'
+export { readSkillTool, listSkillsTool, refreshSkillsCache } from './skill'
 
 /** 所有核心 Tools */
 export const coreTools: ToolDefinition[] = [
   bashTool,
   readTool,
   writeTool,
-  editTool
+  editTool,
+  listSkillsTool,
+  readSkillTool
 ]

@@ -8,7 +8,7 @@
 import { createLLMAdapter, type LLMAdapter, type LLMConfig } from '../llm'
 import { ToolRegistry, getToolRegistry, PolicyEngine, getPolicyEngine, AgentGateway } from '../core'
 import { coreTools } from '../tools'
-import { loadSkills, formatSkillsForPrompt, getDefaultSkillsDir } from '../skills'
+import { loadSkills, getDefaultSkillsDir } from '../skills'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
 
@@ -61,16 +61,27 @@ export async function initAgentClient(
   // 保存基础 system prompt
   let basePrompt = config.systemPrompt || config.llm.systemPrompt || ''
   
-  // 加载用户 Skills
+  // 加载用户 Skills（只记录列表，不注入完整内容）
   const skillsDir = getDefaultSkillsDir()
   const { skills, errors } = await loadSkills(skillsDir)
   if (errors.length > 0) {
     logger.warn(`Skills loading had ${errors.length} errors`)
   }
   if (skills.length > 0) {
-    const skillsPrompt = formatSkillsForPrompt(skills)
-    basePrompt = basePrompt + '\n\n' + skillsPrompt
-    logger.info(`Loaded ${skills.length} user skills`)
+    // 只注入 Skills 列表，让 LLM 按需调用 read_skill 获取完整内容
+    const skillsList = skills.map(s => 
+      `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
+    ).join('\n')
+    
+    const skillsPrompt = `
+## Available Skills
+
+You have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.
+
+${skillsList}
+`
+    basePrompt = basePrompt + '\n' + skillsPrompt
+    logger.info(`Loaded ${skills.length} user skills: ${skills.map(s => s.id).join(', ')}`)
   }
   systemPrompt = basePrompt
   
@@ -143,14 +154,20 @@ export async function callAgent(
     let fullResponse = ''
     let lastTextEvent = ''
     
-    // 权限请求处理器
+    // 权限请求处理器 - 使用 PermissionBridge 实现真正的用户等待
     const onPermissionRequest = async (prompt: string): Promise<boolean> => {
-      // 发送权限请求给用户
-      await sendReply(prompt + '\n\n请回复 "yes" 或 "no"')
-      // TODO: 真正实现等待用户响应
-      // 目前自动批准（后续需要实现 permission bridge）
-      logger.warn('Auto-approving permission request (bridge not implemented)')
-      return true
+      const { PermissionBridge } = await import('../utils/permission-bridge')
+      const bridge = PermissionBridge.getInstance()
+      
+      // 构建 RequestContext 用于 PermissionBridge
+      const reqContext = {
+        userId,
+        channelId,
+        sendReply
+      }
+      
+      const decision = await bridge.request(prompt, reqContext)
+      return decision === 'allow'
     }
     
     // 处理 Agent 事件流
