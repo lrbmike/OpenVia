@@ -1,4 +1,10 @@
-import { callClaude, ensureWorkDir } from '../ai'
+/**
+ * Orchestrator Router - 新架构版本
+ * 
+ * 使用新的 Agent Client 替代旧的 Claude SDK
+ */
+
+import { callAgent, ensureWorkDir } from '../ai'
 import { getSession } from './session'
 import { isUserAllowed, logAudit } from './policy'
 import { Logger } from '../utils/logger'
@@ -34,6 +40,8 @@ export function getRouterConfig(): RouterConfig {
 
 /**
  * Handle user message (Orchestrator core loop)
+ * 
+ * 使用新的 Agent Client 架构
  */
 export async function handleMessage(
   input: string,
@@ -55,23 +63,16 @@ export async function handleMessage(
 
     const session = getSession(userId, userId)
 
-    // Construct initial Context
-    const context = {
-      history: session.history, 
-      config: {
-        workDir: routerConfig.workDir,
-        timeout: routerConfig.timeout
-      }
-    }
-
     // Add user message to history
     session.history.push({ role: 'user', content: input })
 
-    // Call Claude SDK (SDK handles tool calls and multi-step reasoning internally)
-    // Pass the raw context (RequestContext) to callClaude so it can pass it to sendMessage
-    const sdkContext = { userId, channelId, sendReply }
-    // @ts-ignore - Updating callClaude signature next
-    const response = await callClaude(input, context, sdkContext)
+    // 使用新架构的 callAgent
+    const requestContext = { userId, channelId, sendReply }
+    const response = await callAgent(
+      input,
+      { history: session.history },
+      requestContext
+    )
 
     if (response.action === 'reply' && response.message) {
         await sendReply(response.message)

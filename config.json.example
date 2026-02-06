@@ -1,15 +1,25 @@
 {
-  "telegram": {
-    "botToken": "your_bot_token_here",
-    "allowedUserIds": [123456789, 987654321]
+  "adapters": {
+    "default": "telegram",
+    "telegram": {
+      "botToken": "your_bot_token_here",
+      "allowedUserIds": [123456789, 987654321]
+    },
+    "feishu": {
+      "appId": "your_app_id",
+      "appSecret": "your_app_secret",
+      "verificationToken": "optional_verification_token",
+      "encryptKey": "optional_encrypt_key"
+    }
   },
-  "claude": {
-    "apiKey": "sk-ant-api03-...",
-    "baseUrl": "https://api.anthropic.com",
-    "model": "claude-3-5-sonnet-20241022",
+  "llm": {
+    "format": "openai",
+    "apiKey": "sk-xxx",
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen-max",
     "timeout": 120000,
-    "permissionMode": "default",
-    "SHELL_CONFIRM_LIST": []
+    "maxTokens": 4096,
+    "shellConfirmList": ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown"]
   },
   "logging": {
     "level": "info",

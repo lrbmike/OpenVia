@@ -9,7 +9,7 @@
 import { BotManager } from './bot'
 import { initRouter, handleMessage } from './orchestrator'
 import { initPolicy } from './orchestrator/policy'
-import { initClaudeClient, stopClaudeClient } from './ai'
+import { initAgentClient, stopAgentClient } from './ai'
 import { Logger } from './utils/logger'
 import { parseCLI, showHelp, showVersion, showBanner } from './cli'
 import {
@@ -64,9 +64,12 @@ async function startBotCommand(): Promise<void> {
   // Initialize Policy
   initPolicy(config.telegram.allowedUserIds)
  
-  // Initialize Claude Client
+  // Initialize Agent Client (新架构)
   const sessionsDir = getSessionsDir()
-  await initClaudeClient(config.claude, sessionsDir)
+  await initAgentClient({
+    llm: config.llm,
+    systemPrompt: config.llm.systemPrompt
+  }, sessionsDir)
 
   // Initialize Router
   await initRouter({
@@ -157,7 +160,7 @@ async function shutdown(): Promise<void> {
   if (botManager) {
       await botManager.stopAll()
   }
-  stopClaudeClient()
+  stopAgentClient()
   logger.info('Goodbye!')
   process.exit(0)
 }

@@ -2,5 +2,15 @@
  * AI Module Exports
  */
 
-export * from './claude-cli'
+// 新架构
+export {
+  initAgentClient,
+  stopAgentClient,
+  callAgent,
+  getLLMInfo,
+  getWorkDir,
+  ensureWorkDir
+} from './agent-client'
+
+// Prompts
 export * from './prompts'

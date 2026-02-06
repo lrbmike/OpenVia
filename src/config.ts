@@ -38,6 +38,19 @@ export interface AppConfig {
     botToken: string
     allowedUserIds: number[]
   }
+  /** NEW: LLM Configuration (format-based) */
+  llm: {
+    format: 'openai' | 'claude' | 'gemini'
+    apiKey: string
+    baseUrl: string
+    model: string
+    timeout?: number
+    maxTokens?: number
+    temperature?: number
+    systemPrompt?: string
+    shellConfirmList?: string[]
+  }
+  /** @deprecated Use llm instead */
   claude: {
     apiKey: string
     baseUrl: string
@@ -76,6 +89,15 @@ export function getDefaultConfig(): AppConfig {
     telegram: {
       botToken: '',
       allowedUserIds: [],
+    },
+    llm: {
+      format: 'openai',
+      apiKey: '',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+      timeout: 120000,
+      maxTokens: 4096,
+      shellConfirmList: ['rm', 'mv', 'sudo', 'su', 'dd', 'reboot', 'shutdown', 'mkfs', 'chmod', 'chown', '>', '>>', '&', '|'],
     },
     claude: {
       apiKey: '',
