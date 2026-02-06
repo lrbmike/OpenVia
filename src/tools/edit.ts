@@ -1,5 +1,5 @@
 /**
- * Edit Skill - 编辑文件内容（替换指定部分）
+ * Edit Tool - 编辑文件内容（替换指定部分）
  */
 
 import { z } from 'zod'
@@ -15,8 +15,8 @@ const inputSchema = z.object({
   replaceAll: z.boolean().optional().describe('Replace all occurrences (default: false, replace first only)')
 })
 
-/** Edit Skill 定义 */
-export const editSkill: ToolDefinition = {
+/** Edit Tool 定义 */
+export const editTool: ToolDefinition = {
   name: 'edit_file',
   description: 'Edit a file by replacing specific content. Searches for oldContent and replaces it with newContent.',
   inputSchema,

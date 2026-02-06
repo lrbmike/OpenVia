@@ -1,5 +1,5 @@
 /**
- * Bash Skill - 执行 Shell 命令
+ * Bash Tool - 执行 Shell 命令
  */
 
 import { z } from 'zod'
@@ -15,8 +15,8 @@ const inputSchema = z.object({
   timeout: z.number().optional().describe('Timeout in milliseconds (default: 30000)')
 })
 
-/** Bash Skill 定义 */
-export const bashSkill: ToolDefinition = {
+/** Bash Tool 定义 */
+export const bashTool: ToolDefinition = {
   name: 'bash',
   description: 'Execute a shell command and return the output. Use this for running scripts, installing packages, file operations, etc.',
   inputSchema,

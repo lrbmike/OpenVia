@@ -1,5 +1,5 @@
 /**
- * Read Skill - 读取文件内容
+ * Read Tool - 读取文件内容
  */
 
 import { z } from 'zod'
@@ -13,8 +13,8 @@ const inputSchema = z.object({
   encoding: z.enum(['utf8', 'base64']).optional().describe('File encoding (default: utf8)')
 })
 
-/** Read Skill 定义 */
-export const readSkill: ToolDefinition = {
+/** Read Tool 定义 */
+export const readTool: ToolDefinition = {
   name: 'read_file',
   description: 'Read the contents of a file. Returns the file content as a string.',
   inputSchema,

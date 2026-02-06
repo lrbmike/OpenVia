@@ -1,5 +1,5 @@
 /**
- * Write Skill - 写入文件内容
+ * Write Tool - 写入文件内容
  */
 
 import { z } from 'zod'
@@ -14,8 +14,8 @@ const inputSchema = z.object({
   createDirs: z.boolean().optional().describe('Create parent directories if they do not exist (default: true)')
 })
 
-/** Write Skill 定义 */
-export const writeSkill: ToolDefinition = {
+/** Write Tool 定义 */
+export const writeTool: ToolDefinition = {
   name: 'write_file',
   description: 'Write content to a file. Creates the file if it does not exist, or overwrites it if it does.',
   inputSchema,

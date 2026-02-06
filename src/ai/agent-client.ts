@@ -7,7 +7,8 @@
 
 import { createLLMAdapter, type LLMAdapter, type LLMConfig } from '../llm'
 import { ToolRegistry, getToolRegistry, PolicyEngine, getPolicyEngine, AgentGateway } from '../core'
-import { coreSkills } from '../skills'
+import { coreTools } from '../tools'
+import { loadSkills, formatSkillsForPrompt, getDefaultSkillsDir } from '../skills'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
 
@@ -57,8 +58,21 @@ export async function initAgentClient(
     workDir = sessionsDir
   }
   
-  // 保存 system prompt
-  systemPrompt = config.systemPrompt || config.llm.systemPrompt || ''
+  // 保存基础 system prompt
+  let basePrompt = config.systemPrompt || config.llm.systemPrompt || ''
+  
+  // 加载用户 Skills
+  const skillsDir = getDefaultSkillsDir()
+  const { skills, errors } = await loadSkills(skillsDir)
+  if (errors.length > 0) {
+    logger.warn(`Skills loading had ${errors.length} errors`)
+  }
+  if (skills.length > 0) {
+    const skillsPrompt = formatSkillsForPrompt(skills)
+    basePrompt = basePrompt + '\n\n' + skillsPrompt
+    logger.info(`Loaded ${skills.length} user skills`)
+  }
+  systemPrompt = basePrompt
   
   // 1. 创建 LLM Adapter
   const llmConfig: LLMConfig = {
@@ -76,8 +90,8 @@ export async function initAgentClient(
   
   // 2. 初始化 Tool Registry
   toolRegistry = getToolRegistry()
-  toolRegistry.registerAll(coreSkills)
-  logger.info(`Registered ${coreSkills.length} core skills`)
+  toolRegistry.registerAll(coreTools)
+  logger.info(`Registered ${coreTools.length} core tools`)
   
   // 3. 初始化 Policy Engine
   policyEngine = getPolicyEngine()
