@@ -209,7 +209,14 @@ export async function callAgent(
           
         case 'tool_result':
           if (!event.result.success) {
-            logger.warn(`Tool ${event.name} failed: ${event.result.error}`)
+            let errorMsg = `Tool ${event.name} failed: ${event.result.error}`
+            if (event.result.data) {
+              const dataStr = typeof event.result.data === 'object' 
+                ? JSON.stringify(event.result.data, null, 2)
+                : String(event.result.data)
+              errorMsg += `\nOutput: ${dataStr}`
+            }
+            logger.warn(errorMsg)
           }
           break
           
