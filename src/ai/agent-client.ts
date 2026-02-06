@@ -200,11 +200,11 @@ export async function callAgent(
           break
           
         case 'tool_start':
-          logger.debug(`Tool started: ${event.name}`)
+          logger.debug(`Tool started: ${event.name} ${JSON.stringify(event.args)}`)
           break
           
         case 'tool_pending':
-          logger.debug(`Tool pending approval: ${event.name}`)
+          logger.debug(`Tool pending approval: ${event.name} ${JSON.stringify(event.args)}`)
           break
           
         case 'tool_result':

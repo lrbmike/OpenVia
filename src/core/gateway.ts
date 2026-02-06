@@ -25,7 +25,7 @@ import { ToolExecutor } from './executor'
 export type AgentEvent =
   | { type: 'text_delta'; content: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
-  | { type: 'tool_pending'; id: string; name: string; prompt: string }
+  | { type: 'tool_pending'; id: string; name: string; args: unknown; prompt: string }
   | { type: 'tool_result'; id: string; name: string; result: ToolResult }
   | { type: 'done'; fullResponse: string }
   | { type: 'error'; message: string }
@@ -200,7 +200,7 @@ export class AgentGateway {
           yield { type: 'tool_result', id: tc.id, name: tc.name, result }
           
         } else if (decision.type === 'require_approval') {
-          yield { type: 'tool_pending', id: tc.id, name: tc.name, prompt: decision.prompt }
+          yield { type: 'tool_pending', id: tc.id, name: tc.name, args: tc.args, prompt: decision.prompt }
           
           // 等待用户批准
           let approved = false
