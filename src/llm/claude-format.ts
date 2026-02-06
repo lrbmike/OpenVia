@@ -165,7 +165,25 @@ export class ClaudeFormatAdapter implements LLMAdapter {
       
       if (!response.ok) {
         const errorText = await response.text()
-        yield { type: 'error', message: `API error ${response.status}: ${errorText}` }
+        let cleanMessage = errorText
+        
+        // 如果是 HTML 错误（通常是 502/504 网关错误），只返回状态码简述
+        if (errorText.trim().startsWith('<') || errorText.includes('<!DOCTYPE html>')) {
+           cleanMessage = `Gateway Error (${response.statusText || 'Unknown'})`
+        } else {
+           // 尝试解析 JSON 错误信息
+           try {
+             const errorJson = JSON.parse(errorText)
+             cleanMessage = errorJson.error?.message || errorJson.message || errorText
+           } catch {
+             // 非 JSON 文本，截断过长的内容
+             if (cleanMessage.length > 200) {
+               cleanMessage = cleanMessage.slice(0, 200) + '...'
+             }
+           }
+        }
+        
+        yield { type: 'error', message: `API error ${response.status}: ${cleanMessage}` }
         return
       }
       
