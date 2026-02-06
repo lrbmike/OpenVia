@@ -129,20 +129,26 @@ After=network.target
 
 [Service]
 Type=simple
-# Recommended to run as a non-root user to ensure ~/.openvia/ configuration is accessible
+# Recommended to run as a non-root user
 User=<your-user>
-# Working Directory: Set to the project root or the directory where the binary is located
 WorkingDirectory=/home/<your-user>/workspaces/OpenVia
-# Environment: PATH must contain paths to node, bun, and claude
-# Note: systemd does not automatically load .bashrc, so PATH must be explicitly defined here
-Environment="PATH=/home/<your-user>/.local/bin:/home/<your-user>/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# 1. Environment Variables (Secrets)
+# Recommended: Load from .env file (Must use absolute path)
+EnvironmentFile=/home/<your-user>/workspaces/OpenVia/.env
+# Or set inline: Environment="TELEGRAM_BOT_TOKEN=xxx"
+
+# 2. PATH (Crucial for bun/node/claude)
+# IMPORTANT: Systemd does NOT load .bashrc. You must explicitly set PATH.
+# Do NOT use %h here, use absolute paths.
+Environment="PATH=/home/<your-user>/.bun/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Execution Path (Choose one):
 # Option 1: Using standalone binary (Recommended)
 ExecStart=/home/<your-user>/workspaces/OpenVia/dist/openvia-linux
 
 # Option 2: Running Node.js script (dist/index.js)
-# ExecStart=/usr/bin/node /home/lrbmike/workspaces/OpenVia/dist/index.js
+# ExecStart=/usr/bin/node /home/<your-user>/workspaces/OpenVia/dist/index.js
 
 Restart=always
 

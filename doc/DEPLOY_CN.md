@@ -129,19 +129,25 @@ After=network.target
 
 [Service]
 Type=simple
-# 建议使用普通用户运行，以确保能读取到 ~/.openvia/ 目录下的配置
+# 建议使用非 root 用户运
 User=<your-user>
-# 运行目录：设置为源码根目录或二进制文件所在目录
 WorkingDirectory=/home/<your-user>/workspaces/OpenVia
-# 注入环境变量：PATH 必须包含 node, bun 以及 claude 的路径
-# 注意：systemd 不会自动加载 .bashrc，必须在这里明确指定 PATH
-Environment="PATH=/home/<your-user>/.local/bin:/home/<your-user>/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# 执行程序路径 (选择其中一种方式):
-# 方式 1: 如果使用独立二进制程序 (推荐)
+# 1. 环境变量 (密钥等)
+# 推荐: 从 .env 文件加载 (必须使用绝对路径)
+EnvironmentFile=/home/<your-user>/workspaces/OpenVia/.env
+# 或者直接写在 Service 里: Environment="TELEGRAM_BOT_TOKEN=xxx"
+
+# 2. PATH 环境变量 (对 bun/node/claude 至关重要)
+# 重要: Systemd 不会加载 .bashrc，必须显式定义 PATH
+# 请勿使用 %h，务必使用绝对路径
+Environment="PATH=/home/<your-user>/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+
+# 执行路径 (二选一):
+# 选项 1: 使用独立二进制文件 (推荐)
 ExecStart=/home/<your-user>/workspaces/OpenVia/dist/openvia-linux
 
-# 方式 2: 如果运行 Node.js 脚本 (dist/index.js)
+# 选项 2: 运行 Node.js 脚本
 # ExecStart=/usr/bin/node /home/<your-user>/workspaces/OpenVia/dist/index.js
 
 Restart=always
