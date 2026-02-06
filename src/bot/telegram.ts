@@ -27,21 +27,35 @@ function escapeHtml(text: string): string {
  * Handles *bold* and `code`
  */
 function formatMarkdownToHtml(markdown: string): string {
-  // 1. First, split by code blocks to avoid escaping content inside code
-  const parts = markdown.split(/(`[^`]+`)/g)
+  const placeholders: string[] = []
   
-  return parts.map(part => {
-    if (part.startsWith('`') && part.endsWith('`')) {
-      // It's a code block
-      const codeContent = part.slice(1, -1)
-      return `<code>${escapeHtml(codeContent)}</code>`
-    } else {
-      // It's normal text, escape HTML and then handle bold
-      let escaped = escapeHtml(part)
-      // *bold* -> <b>bold</b>
-      return escaped.replace(/\*([^\*]+)\*/g, '<b>$1</b>')
-    }
-  }).join('')
+  // 1. Protect triple backtick code blocks
+  let text = markdown.replace(/```([\s\S]*?)```/g, (_, code) => {
+    const i = placeholders.length
+    placeholders.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`)
+    return `__CODE_BLOCK_${i}__`
+  })
+
+  // 2. Protect single backtick code blocks
+  text = text.replace(/`([^`]+)`/g, (_, code) => {
+    const i = placeholders.length
+    placeholders.push(`<code>${escapeHtml(code)}</code>`)
+    return `__CODE_INLINE_${i}__`
+  })
+
+  // 3. Escape HTML for the non-code text
+  text = escapeHtml(text)
+
+  // 4. Handle bold (*bold*)
+  text = text.replace(/\*([^\*]+)\*/g, '<b>$1</b>')
+
+  // 5. Restore placeholders
+  placeholders.forEach((val, i) => {
+    text = text.replace(`__CODE_BLOCK_${i}__`, val)
+    text = text.replace(`__CODE_INLINE_${i}__`, val)
+  })
+
+  return text
 }
 
 export class TelegramChannel implements Channel {
@@ -82,11 +96,17 @@ export class TelegramChannel implements Channel {
       if (action === 'allow') {
           bridge.resolveRequest(id, 'allow')
           await ctx.answerCallbackQuery({ text: 'Allowed ✅' })
-          await ctx.editMessageText(`${ctx.callbackQuery.message?.text}\n\n(Allowed by ${ctx.from.first_name})`, { parse_mode: 'Markdown' })
+          
+          const originalText = ctx.callbackQuery.message?.text || ''
+          const htmlText = formatMarkdownToHtml(originalText)
+          await ctx.editMessageText(`${htmlText}\n\n<b>(Allowed by ${escapeHtml(ctx.from.first_name)})</b>`, { parse_mode: 'HTML' })
       } else {
           bridge.resolveRequest(id, 'deny')
           await ctx.answerCallbackQuery({ text: 'Denied ❌' })
-           await ctx.editMessageText(`${ctx.callbackQuery.message?.text}\n\n(Denied by ${ctx.from.first_name})`, { parse_mode: 'Markdown' })
+          
+          const originalText = ctx.callbackQuery.message?.text || ''
+          const htmlText = formatMarkdownToHtml(originalText)
+          await ctx.editMessageText(`${htmlText}\n\n<b>(Denied by ${escapeHtml(ctx.from.first_name)})</b>`, { parse_mode: 'HTML' })
       }
     })
 
