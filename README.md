@@ -6,35 +6,59 @@ Universal, Extensible CLI Gateway for AI Agents.
 
 ## Overview
 
-OpenVia is a bridge between modern AI Agents (like Claude Code) and
-communication platforms (like Telegram). It allows you to interact with your
-local AI Agent through a mobile or web interface securely.
+OpenVia is a bridge between AI Large Language Models and communication platforms
+(Telegram, Feishu, etc.). It provides a unified gateway that allows you to
+interact with AI agents through mobile or web interfaces securely.
 
 ## Features
 
-- 🤖 **Agent Interaction**: Seamlessly talk to Claude AI or other Agents via
-  Telegram.
-- 🔧 **Native Skills**: Supports file system access, search, git operations, and
-  shell execution.
-- 🔒 **Secure by Design**: User whitelist, shell command whitelisting, and
-  granular permission requests via Telegram.
-- 📝 **History Management**: Automatic conversation history and session
+- **Multi-LLM Support**: Works with OpenAI, Claude, Qwen, DeepSeek, Moonshot,
+  and any OpenAI-compatible API.
+- **Multi-Channel**: Supports Telegram, Feishu (Lark), with extensible channel
+  architecture.
+- **Built-in Tools**: File operations, shell execution, and extensible tool
+  registry.
+- **Skills System**: User-defined knowledge extensions loaded from
+  `~/.openvia/skills/`.
+- **Secure by Design**: User whitelist, shell command confirmation, and granular
+  permission requests.
+- **Session Management**: Automatic conversation history and session
   persistence.
-- 🚀 **Cross-Platform**: Zero-dependency binary available for Linux, Windows,
-  and macOS.
-- ⚡ **Powered by Bun**: Built on high-performance Bun runtime (v1.2+
-  recommended).
+- **Powered by Bun**: Built on high-performance Bun runtime (v1.2+ recommended).
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     OpenVia Gateway                          │
+├─────────────┬─────────────┬─────────────┬──────────────────┤
+│  Telegram   │   Feishu    │   (Future)  │   Bot Channels   │
+├─────────────┴─────────────┴─────────────┴──────────────────┤
+│                    Router / Orchestrator                     │
+├─────────────────────────────────────────────────────────────┤
+│                      Agent Gateway                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │ LLM Adapter │  │   Policy    │  │   Tool      │         │
+│  │  (OpenAI)   │  │   Engine    │  │  Executor   │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+├─────────────────────────────────────────────────────────────┤
+│  Tools: bash, read_file, write_file, edit_file, ...         │
+│  Skills: ~/.openvia/skills/ (user-defined knowledge)        │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Prerequisites
 
-- **Bun**: v1.2.0 or higher is required to run or build from source.
-- **Node.js**: v18+ (Required for Claude Code CLI).
+- **Bun**: v1.2.0 or higher (for running from source)
+- **Node.js**: v18+ (optional, for npm installation)
 
 ## Installation
 
-### Option A: Install via npm (Recommended for users)
+### Option A: Install via npm
 
 ```bash
 npm install -g @lrbmike/openvia
@@ -44,31 +68,19 @@ bun install -g @lrbmike/openvia
 
 ### Option B: Download Pre-built Binary
 
-Download the executable for your platform from
-[Releases](https://github.com/lrbmike/OpenVia/releases):
+Download from [Releases](https://github.com/lrbmike/OpenVia/releases):
 
 - `openvia-linux` - Linux x64
 - `openvia.exe` - Windows x64
 - `openvia-darwin` - macOS x64
 - `openvia-darwin-arm64` - macOS Apple Silicon
 
-```bash
-# Linux/macOS
-chmod +x openvia-linux
-./openvia-linux --help
-```
-
-### Option C: Install from Source (For developers)
+### Option C: Install from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/lrbmike/OpenVia.git
 cd OpenVia
-
-# Install dependencies
 bun install
-
-# Link globally
 bun link
 ```
 
@@ -82,18 +94,11 @@ bun link
 openvia init
 ```
 
-This creates a configuration directory at `~/.openvia/`.
+This creates `~/.openvia/config.json`.
 
-### 2. Configure Token
+### 2. Configure LLM and Channel
 
-````bash
-# Option A: Environment Variable
-export TELEGRAM_BOT_TOKEN="your-bot-token"
-
-# Option B: Config File
-openvia config set telegram.botToken "your-bot-token"
-
-### Configuration Example (`~/.openvia/config.json`)
+Edit `~/.openvia/config.json`:
 
 ```json
 {
@@ -104,28 +109,28 @@ openvia config set telegram.botToken "your-bot-token"
       "allowedUserIds": [123456789]
     },
     "feishu": {
-      "appId": "cli_a4d...",
-      "appSecret": "your-app-secret",
-      "wsEndpoint": "wss://..."
+      "appId": "your-app-id",
+      "appSecret": "your-app-secret"
     }
   },
-  "claude": {
-    "model": "claude-3-5-sonnet-20240620",
+  "llm": {
+    "format": "openai",
+    "apiKey": "sk-xxx",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "gpt-4o",
+    "systemPrompt": "You are a helpful assistant. Running on Windows, use PowerShell commands.",
     "timeout": 120000,
-    "systemPrompt": "Always answer in Chinese"
+    "maxTokens": 4096,
+    "maxIterations": 10,
+    "shellConfirmList": ["rm", "mv", "sudo", "del", "rmdir"]
+  },
+  "logging": {
+    "level": "info"
   }
 }
-````
+```
 
-````
-### 3. Ensure Claude CLI is Installed
-
-```bash
-npm install -g @anthropic-ai/claude-code
-claude  # Complete authentication
-````
-
-### 4. Run the Gateway
+### 3. Run the Gateway
 
 ```bash
 openvia
@@ -133,80 +138,79 @@ openvia
 
 ---
 
-## CLI Usage
-
-```
-openvia [command] [options]
-
-Commands:
-  openvia            Start the gateway (default)
-  openvia start      Start the gateway
-  openvia init       Initialize config directory and file
-  openvia config     View current configuration
-  openvia config set Set configuration item
-  openvia config get Get configuration item
-  openvia help       Display help information
-  openvia version    Display version number
-
-Options:
-  -t, --timeout <ms>     Set request timeout (ms)
-  -m, --model <name>     Set Claude model
-  -v, --verbose          Enable verbose logging
-  -c, --config <path>    Specify custom config file
-  -h, --help             Display help
-  --version              Display version
-```
-
----
-
 ## Configuration
 
-### Config File
+### LLM Configuration
 
-Location: `~/.openvia/config.json`
+| Field              | Description                                    |
+| ------------------ | ---------------------------------------------- |
+| `format`           | API format: `openai`, `claude`, or `gemini`    |
+| `apiKey`           | Your API key                                   |
+| `baseUrl`          | API endpoint (supports custom proxies)         |
+| `model`            | Model name (e.g., `gpt-4o`, `qwen-max`)        |
+| `systemPrompt`     | System prompt for all conversations            |
+| `maxIterations`    | Max tool call rounds per message (default: 10) |
+| `shellConfirmList` | Commands requiring user confirmation           |
 
-```json
-{
-  "telegram": {
-    "botToken": "",
-    "allowedUserIds": []
-  },
-  "claude": {
-    "apiKey": "",
-    "baseUrl": "https://api.anthropic.com",
-    "model": "claude-sonnet-4-5-20250929",
-    "timeout": 120000,
-    "permissionMode": "default",
-    "permissionMode": "default",
-    // List of commands that require explicit user confirmation.
-    // NOTE: Configuring this field OVERWRITES the default list, it does not append.
-    // Default list: ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown", "mkfs", "chmod", "chown", "wget", "curl", ">", ">>", "&", "|"]
-    "shellConfirmList": ["rm", "mv", "sudo", "su", ">"],
+### Supported LLM Providers
 
-    "systemPrompt": "Always answer in Chinese"
-  },
-  "logging": {
-    "level": "info",
-    "verbose": false
-  }
-}
-```
-
-### Configuration Priority
-
-`CLI Arguments > Environment Variables > Config File > Default Values`
+| Provider | Format   | Example baseUrl                                     |
+| -------- | -------- | --------------------------------------------------- |
+| OpenAI   | `openai` | `https://api.openai.com/v1`                         |
+| Claude   | `openai` | `https://api.anthropic.com/v1`                      |
+| Qwen     | `openai` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| DeepSeek | `openai` | `https://api.deepseek.com/v1`                       |
+| Moonshot | `openai` | `https://api.moonshot.cn/v1`                        |
 
 ---
 
-## Skills List
+## Skills System
 
-| Skill          | Description                          |
-| -------------- | ------------------------------------ |
-| `exec_shell`   | Execute shell commands (whitelisted) |
-| `read_file`    | Read file contents                   |
-| `search_files` | Search for files                     |
-| `http_request` | Make HTTP requests                   |
-| `git_status`   | Get git repository status            |
+Skills are user-defined knowledge extensions stored in `~/.openvia/skills/`.
+
+### Skill Structure
+
+```
+~/.openvia/skills/
+└── my-skill/
+    ├── SKILL.md      # Required: Instructions in Markdown
+    └── scripts/      # Optional: Helper scripts
+```
+
+### Example Skill
+
+`~/.openvia/skills/current-time/SKILL.md`:
+
+````markdown
+---
+name: Current Time Expert
+description: Get current time in various formats
+---
+
+# Get Current Time
+
+Use PowerShell to get current time:
+
+```powershell
+powershell -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"
+```
+````
+
+````
+The AI will automatically use `read_skill` to load this knowledge when relevant.
+
+---
+
+## Built-in Tools
+
+| Tool | Description |
+|------|-------------|
+| `bash` | Execute shell commands |
+| `read_file` | Read file contents |
+| `write_file` | Write content to file |
+| `edit_file` | Edit file by replacing content |
+| `list_skills` | List available user skills |
+| `read_skill` | Read skill instructions |
 
 ---
 
@@ -216,18 +220,14 @@ Location: `~/.openvia/config.json`
 # Dev mode (hot reload)
 bun run dev
 
-# Build for current platform
+# Build
 bun run build
 
 # Build for all platforms
 bun run build:all
-```
+````
 
 ---
-
-## Documentation
-
-- [Deployment Guide](./doc/DEPLOY.md)
 
 ## License
 
@@ -235,8 +235,7 @@ MIT
 
 ## Roadmap
 
-1. **Concurrent Multi-platform Support**: Currently, OpenVia activates a single
-   default channel (Telegram or Feishu) at startup. Future architecture will
-   support simultaneous listening on multiple platforms.
-2. **Plugin System**: Support dynamic loading of custom user Skills.
-3. **Web Dashboard**: Visual configuration management and session viewer.
+1. **Multi-Channel Concurrent**: Support simultaneous listening on multiple
+   platforms.
+2. **Web Dashboard**: Visual configuration and session management.
+3. **More LLM Formats**: Native Claude and Gemini format support.
