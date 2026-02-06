@@ -97,8 +97,8 @@ export class FeishuChannel implements Channel {
                      
                      // Read stream to buffer
                      const chunks: Buffer[] = []
-                     // @ts-ignore 
-                     const stream = response as any 
+                    // @ts-ignore
+                    const stream = response.getReadableStream() 
                      
                      for await (const chunk of stream) {
                          chunks.push(Buffer.from(chunk))
