@@ -62,7 +62,8 @@ async function startBotCommand(): Promise<void> {
   logger.info('Initializing...')
  
   // Initialize Policy
-  initPolicy(config.telegram.allowedUserIds)
+  const allowedIds = config.adapters.telegram?.allowedUserIds || config.telegram.allowedUserIds || []
+  initPolicy(allowedIds)
  
   // Initialize Agent Client (新架构)
   const sessionsDir = getSessionsDir()
