@@ -1,7 +1,11 @@
 /**
  * OpenAI Format Adapter
  * 
- * 兼容所有使用 OpenAI API 格式的模型：
+ * 支持两种 API 协议：
+ * - Chat Completions API (/v1/chat/completions) - 标准 OpenAI 格式
+ * - Responses API (/v1/responses) - 新一代 OpenAI API
+ * 
+ * 兼容以下模型服务：
  * - OpenAI (GPT-4, GPT-4o, etc.)
  * - Qwen (通义千问)
  * - DeepSeek
@@ -21,17 +25,17 @@ import type {
 } from './adapter'
 
 // ============================================================================
-// OpenAI API 类型定义
+// Chat Completions API 类型定义
 // ============================================================================
 
-interface OpenAIMessage {
+interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> | null
-  tool_calls?: OpenAIToolCall[]
+  tool_calls?: ChatToolCall[]
   tool_call_id?: string
 }
 
-interface OpenAIToolCall {
+interface ChatToolCall {
   id: string
   type: 'function'
   function: {
@@ -40,7 +44,7 @@ interface OpenAIToolCall {
   }
 }
 
-interface OpenAITool {
+interface ChatTool {
   type: 'function'
   function: {
     name: string
@@ -49,7 +53,7 @@ interface OpenAITool {
   }
 }
 
-interface OpenAIStreamChoice {
+interface ChatStreamChoice {
   index: number
   delta: {
     role?: string
@@ -67,12 +71,12 @@ interface OpenAIStreamChoice {
   finish_reason: string | null
 }
 
-interface OpenAIStreamChunk {
+interface ChatStreamChunk {
   id: string
   object: string
   created: number
   model: string
-  choices: OpenAIStreamChoice[]
+  choices: ChatStreamChoice[]
   usage?: {
     prompt_tokens: number
     completion_tokens: number
@@ -81,10 +85,10 @@ interface OpenAIStreamChunk {
 }
 
 // ============================================================================
-// Responses API Types (Phase 13)
+// Responses API 类型定义
 // ============================================================================
 
-interface ResponsesInputBlock {
+interface ResponsesContentBlock {
   type: 'input_text' | 'input_image'
   text?: string
   image_url?: string
@@ -92,28 +96,16 @@ interface ResponsesInputBlock {
 
 interface ResponsesInputItem {
   type: 'message'
-  role: 'user' | 'system' | 'developer' | 'assistant'
-  content: ResponsesInputBlock[]
+  role: 'user' | 'system' | 'developer'
+  content: ResponsesContentBlock[]
 }
 
-interface ResponsesOutputBlock {
-  type: 'output_text'
-  text: string
-}
-
-interface ResponsesOutputItem {
-  id: string
-  type: 'message'
-  role: 'assistant'
-  content: ResponsesOutputBlock[]
-}
-
-interface ResponsesStreamEvent {
-  output?: ResponsesOutputItem[]
-  usage?: {
-    input_tokens: number
-    output_tokens: number
-  }
+interface ResponsesTool {
+  type: 'function'
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  strict?: boolean
 }
 
 // ============================================================================
@@ -130,12 +122,13 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   constructor(config: LLMConfig) {
     this.config = config
     this.model = config.model
-    // 根据模型名估算上下文长度
     this.maxContextTokens = this.estimateContextLength(config.model)
   }
   
+  /**
+   * 根据模型名估算上下文长度
+   */
   private estimateContextLength(model: string): number {
-    // 常见模型的上下文长度
     if (model.includes('gpt-4o')) return 128000
     if (model.includes('gpt-4-turbo')) return 128000
     if (model.includes('gpt-4')) return 8192
@@ -145,11 +138,36 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     if (model.includes('qwen-turbo')) return 131072
     if (model.includes('deepseek')) return 64000
     if (model.includes('moonshot')) return 128000
-    // 默认
     return 8192
   }
   
+  /**
+   * 主入口：根据 baseUrl 判断使用哪种协议
+   */
   async *chat(input: {
+    messages: Message[]
+    tools?: ToolSchema[]
+    toolResults?: ToolResult[]
+    systemPrompt?: string
+  }): AsyncGenerator<LLMEvent> {
+    const url = this.config.baseUrl.replace(/\/$/, '')
+    
+    // 根据 URL 后缀判断协议类型
+    if (url.endsWith('/responses')) {
+      yield* this.chatWithResponses(url, input)
+    } else {
+      yield* this.chatWithCompletions(url, input)
+    }
+  }
+
+  // ============================================================================
+  // Chat Completions API 实现
+  // ============================================================================
+  
+  /**
+   * 使用 Chat Completions API (/v1/chat/completions)
+   */
+  private async *chatWithCompletions(baseUrl: string, input: {
     messages: Message[]
     tools?: ToolSchema[]
     toolResults?: ToolResult[]
@@ -157,49 +175,20 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
     
-    // 构建 OpenAI 格式的消息
-    const openaiMessages: OpenAIMessage[] = []
+    // 1. 构建消息列表
+    const chatMessages: ChatMessage[] = []
     
-    // System prompt
     if (systemPrompt) {
-      openaiMessages.push({ role: 'system', content: systemPrompt })
+      chatMessages.push({ role: 'system', content: systemPrompt })
     }
     
-    // 转换消息历史
-    // 转换消息历史
     for (const msg of messages) {
-      if (typeof msg.content === 'string') {
-        openaiMessages.push({
-          role: msg.role as 'user' | 'assistant',
-          content: msg.content
-        })
-      } else {
-        // Structured content (ContentBlock[])
-        const content = msg.content.map(block => {
-          if (block.type === 'text') {
-            return { type: 'text' as const, text: block.text }
-          } else {
-            // Image block
-            return {
-              type: 'image_url' as const,
-              image_url: {
-                url: `data:${block.mimeType};base64,${block.data}`
-              }
-            }
-          }
-        })
-        
-        openaiMessages.push({
-          role: msg.role as 'user' | 'assistant',
-          content
-        })
-      }
+      chatMessages.push(this.convertToChatMessage(msg))
     }
     
-    // 添加 tool results（如果有）
     if (toolResults && toolResults.length > 0) {
       for (const result of toolResults) {
-        openaiMessages.push({
+        chatMessages.push({
           role: 'tool',
           tool_call_id: result.toolCallId,
           content: result.content
@@ -207,8 +196,8 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 构建 tools
-    const openaiTools: OpenAITool[] | undefined = tools?.map(t => ({
+    // 2. 构建工具列表
+    const chatTools: ChatTool[] | undefined = tools?.map(t => ({
       type: 'function' as const,
       function: {
         name: t.name,
@@ -217,50 +206,279 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }))
     
-    // 发起请求
-    let url = this.config.baseUrl.replace(/\/$/, '')
-    
-    // Check for /responses mode (Phase 13)
-    const isResponsesMode = url.endsWith('/responses')
-    
-    if (isResponsesMode) {
-      // Delegate to new protocol handler
-      yield* this.chatWithResponses(url, input)
-      return
-    }
-
-    // Standard OpenAI mode
-    if (!url.endsWith('/chat/completions')) {
-      url += '/chat/completions'
-    }
-    
+    // 3. 构建请求体
+    const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`
     const body: Record<string, unknown> = {
       model: this.model,
-      messages: openaiMessages,
+      messages: chatMessages,
       stream: true,
       stream_options: { include_usage: true }
     }
     
-    if (openaiTools && openaiTools.length > 0) {
-      body.tools = openaiTools
+    if (chatTools && chatTools.length > 0) {
+      body.tools = chatTools
     }
-    
     if (this.config.maxTokens) {
       body.max_tokens = this.config.maxTokens
     }
-    
     if (this.config.temperature !== undefined) {
       body.temperature = this.config.temperature
     }
     
-    // Debug logging
-    // console.debug(`[OpenAI] Sending request to: ${url}`)
-    // console.debug(`[OpenAI] Model: ${this.model}`)
-    // console.debug(`[OpenAI] Body: ${JSON.stringify(body)}`) // Uncomment if needed, but reduce noise
+    // 4. 发起请求并处理 SSE 流
+    yield* this.streamRequest(url, body, this.parseChatCompletionsEvent.bind(this))
+  }
+  
+  /**
+   * 转换内部消息格式到 Chat Completions 格式
+   */
+  private convertToChatMessage(msg: Message): ChatMessage {
+    if (typeof msg.content === 'string') {
+      return {
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content
+      }
+    }
+    
+    const content = msg.content.map(block => {
+      if (block.type === 'text') {
+        return { type: 'text' as const, text: block.text }
+      } else {
+        return {
+          type: 'image_url' as const,
+          image_url: { url: `data:${block.mimeType};base64,${block.data}` }
+        }
+      }
+    })
+    
+    return {
+      role: msg.role as 'user' | 'assistant',
+      content
+    }
+  }
+  
+  /**
+   * 解析 Chat Completions SSE 事件
+   */
+  private *parseChatCompletionsEvent(
+    jsonStr: string,
+    state: StreamParserState
+  ): Generator<LLMEvent> {
+    const chunk: ChatStreamChunk = JSON.parse(jsonStr)
+    
+    // 提取 usage
+    if (chunk.usage) {
+      state.usage = {
+        promptTokens: chunk.usage.prompt_tokens,
+        completionTokens: chunk.usage.completion_tokens,
+        totalTokens: chunk.usage.total_tokens
+      }
+    }
+    
+    for (const choice of chunk.choices) {
+      const delta = choice.delta
+      
+      // 文本内容
+      if (delta.content) {
+        yield { type: 'text_delta', content: delta.content }
+      }
+      
+      // Tool calls 增量
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index
+          
+          if (!state.pendingToolCalls.has(idx)) {
+            state.pendingToolCalls.set(idx, { id: '', name: '', args: '' })
+          }
+          
+          const pending = state.pendingToolCalls.get(idx)!
+          
+          if (tc.id) pending.id = tc.id
+          if (tc.function?.name) pending.name = tc.function.name
+          if (tc.function?.arguments) {
+            pending.args += tc.function.arguments
+            yield {
+              type: 'tool_call_delta',
+              id: pending.id,
+              name: pending.name || undefined,
+              argsFragment: tc.function.arguments
+            }
+          }
+        }
+      }
+      
+      // 完成时发送完整的 tool_call 事件
+      if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
+        for (const [, tc] of state.pendingToolCalls) {
+          if (tc.id && tc.name) {
+            try {
+              const args = tc.args ? JSON.parse(tc.args) : {}
+              yield { type: 'tool_call', id: tc.id, name: tc.name, args }
+            } catch {
+              yield { type: 'error', message: `Failed to parse tool args: ${tc.args}` }
+            }
+          }
+        }
+        state.pendingToolCalls.clear()
+      }
+    }
+  }
 
+  // ============================================================================
+  // Responses API 实现
+  // ============================================================================
+  
+  /**
+   * 使用 Responses API (/v1/responses)
+   * 
+   * 注意：Responses API 的消息格式与 Chat Completions 不同
+   * - 需要 type: 'message' 字段
+   * - role 使用 developer/system/user
+   * - 不直接支持 assistant 历史消息
+   */
+  private async *chatWithResponses(url: string, input: {
+    messages: Message[]
+    tools?: ToolSchema[]
+    systemPrompt?: string
+  }): AsyncGenerator<LLMEvent> {
+    const { messages, tools, systemPrompt } = input
+    
+    // 1. 构建输入消息
+    const inputItems: ResponsesInputItem[] = []
+    
+    // System prompt 使用 developer role
+    if (systemPrompt) {
+      inputItems.push({
+        type: 'message',
+        role: 'developer',
+        content: [{ type: 'input_text', text: systemPrompt }]
+      })
+    }
+    
+    // 仅处理 user 消息（Responses API 不直接支持 assistant 历史）
+    for (const msg of messages) {
+      if (msg.role !== 'user') continue
+      inputItems.push(this.convertToResponsesMessage(msg))
+    }
+    
+    // 2. 构建工具列表
+    const responsesTools: ResponsesTool[] | undefined = tools?.map(t => ({
+      type: 'function',
+      name: t.name,
+      description: t.description,
+      parameters: t.input_schema,
+      strict: false
+    }))
+    
+    // 3. 构建请求体
+    const body: Record<string, unknown> = {
+      model: this.model,
+      input: inputItems,
+      stream: true
+    }
+    
+    if (responsesTools && responsesTools.length > 0) {
+      body.tools = responsesTools
+    }
+    
+    // 4. 发起请求并处理 SSE 流
+    yield* this.streamRequest(url, body, this.parseResponsesEvent.bind(this))
+  }
+  
+  /**
+   * 转换内部消息格式到 Responses API 格式
+   */
+  private convertToResponsesMessage(msg: Message): ResponsesInputItem {
+    const blocks: ResponsesContentBlock[] = []
+    
+    if (typeof msg.content === 'string') {
+      blocks.push({ type: 'input_text', text: msg.content })
+    } else {
+      for (const block of msg.content) {
+        if (block.type === 'text') {
+          blocks.push({ type: 'input_text', text: block.text })
+        } else if (block.type === 'image') {
+          blocks.push({
+            type: 'input_image',
+            image_url: `data:${block.mimeType};base64,${block.data}`
+          })
+        }
+      }
+    }
+    
+    return { type: 'message', role: 'user', content: blocks }
+  }
+  
+  /**
+   * 解析 Responses API SSE 事件
+   */
+  private *parseResponsesEvent(
+    jsonStr: string,
+    state: StreamParserState
+  ): Generator<LLMEvent> {
+    const event = JSON.parse(jsonStr)
+    
+    // 文本增量
+    if (event.type === 'response.output_text.delta' && event.delta) {
+      yield { type: 'text_delta', content: event.delta }
+    }
+    
+    // 函数调用完成（方式1：直接事件）
+    if (event.type === 'response.function_call_arguments.done') {
+      yield* this.emitFunctionCall(event.call_id || event.id, event.name, event.arguments)
+    }
+    
+    // 函数调用完成（方式2：通过 output_item）
+    if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+      const item = event.item
+      yield* this.emitFunctionCall(item.call_id || item.id, item.name, item.arguments)
+    }
+    
+    // 响应完成，提取 usage
+    if (event.type === 'response.completed' && event.response?.usage) {
+      const u = event.response.usage
+      state.usage = {
+        promptTokens: u.input_tokens || 0,
+        completionTokens: u.output_tokens || 0,
+        totalTokens: (u.input_tokens || 0) + (u.output_tokens || 0)
+      }
+    }
+  }
+  
+  /**
+   * 发送函数调用事件
+   */
+  private *emitFunctionCall(callId: string | undefined, name: string, argsStr: string): Generator<LLMEvent> {
+    const id = callId || `call_${Date.now()}`
+    let args = {}
+    
+    try {
+      args = argsStr ? JSON.parse(argsStr) : {}
+    } catch {
+      // 忽略解析错误
+    }
+    
+    yield { type: 'tool_call', id, name, args }
+  }
+
+  // ============================================================================
+  // 公共 SSE 流处理
+  // ============================================================================
+  
+  /**
+   * 通用的 SSE 流请求处理
+   */
+  private async *streamRequest(
+    url: string,
+    body: Record<string, unknown>,
+    parseEvent: (jsonStr: string, state: StreamParserState) => Generator<LLMEvent>
+  ): AsyncGenerator<LLMEvent> {
     const controller = new AbortController()
-    const timeout = this.config.timeout || 120000
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      this.config.timeout || 120000
+    )
     
     try {
       const response = await fetch(url, {
@@ -275,10 +493,6 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       
       clearTimeout(timeoutId)
       
-      clearTimeout(timeoutId)
-      
-      // console.debug(`[OpenAI] Response status: ${response.status}`)
-      
       if (!response.ok) {
         const errorText = await response.text()
         yield { type: 'error', message: `API error ${response.status}: ${errorText}` }
@@ -291,98 +505,13 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
       
       // 解析 SSE 流
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      
-      // 用于累积 tool_calls
-      const pendingToolCalls: Map<number, { id: string; name: string; args: string }> = new Map()
-      let usage: TokenUsage | undefined
-      
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || trimmed === 'data: [DONE]') continue
-          if (!trimmed.startsWith('data: ')) continue
-          
-          const jsonStr = trimmed.slice(6)
-          try {
-            const chunk: OpenAIStreamChunk = JSON.parse(jsonStr)
-            
-            // 提取 usage
-            if (chunk.usage) {
-              usage = {
-                promptTokens: chunk.usage.prompt_tokens,
-                completionTokens: chunk.usage.completion_tokens,
-                totalTokens: chunk.usage.total_tokens
-              }
-            }
-            
-            for (const choice of chunk.choices) {
-              const delta = choice.delta
-              
-              // 文本内容
-              if (delta.content) {
-                yield { type: 'text_delta', content: delta.content }
-              }
-              
-              // Tool calls
-              if (delta.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  const idx = tc.index
-                  
-                  if (!pendingToolCalls.has(idx)) {
-                    pendingToolCalls.set(idx, { id: '', name: '', args: '' })
-                  }
-                  
-                  const pending = pendingToolCalls.get(idx)!
-                  
-                  if (tc.id) pending.id = tc.id
-                  if (tc.function?.name) pending.name = tc.function.name
-                  if (tc.function?.arguments) {
-                    pending.args += tc.function.arguments
-                    
-                    // 发送增量事件
-                    yield {
-                      type: 'tool_call_delta',
-                      id: pending.id,
-                      name: pending.name || undefined,
-                      argsFragment: tc.function.arguments
-                    }
-                  }
-                }
-              }
-              
-              // 完成时发送完整的 tool_call 事件
-              if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
-                for (const [, tc] of pendingToolCalls) {
-                  if (tc.id && tc.name) {
-                    try {
-                      const args = tc.args ? JSON.parse(tc.args) : {}
-                      yield { type: 'tool_call', id: tc.id, name: tc.name, args }
-                    } catch {
-                      yield { type: 'error', message: `Failed to parse tool args: ${tc.args}` }
-                    }
-                  }
-                }
-                pendingToolCalls.clear()
-              }
-            }
-          } catch (e) {
-            // 忽略解析错误，继续处理
-            console.debug('[OpenAI] Failed to parse chunk:', jsonStr, e)
-          }
-        }
+      const state: StreamParserState = {
+        pendingToolCalls: new Map(),
+        usage: undefined
       }
       
-      yield { type: 'done', usage }
+      yield* this.parseSSEStream(response.body, parseEvent, state)
+      yield { type: 'done', usage: state.usage }
       
     } catch (error) {
       clearTimeout(timeoutId)
@@ -397,211 +526,50 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }
   }
-
+  
   /**
-   * Handle /v1/responses protocol (Phase 13)
-   * 
-   * OpenAI Responses API 使用不同的请求格式：
-   * - tools: 定义在顶层（与 Chat Completions 类似）
-   * - input: 消息数组
-   * - 事件类型: response.function_call_arguments.done
+   * 解析 SSE 流
    */
-  private async *chatWithResponses(url: string, input: {
-      messages: Message[]
-      tools?: ToolSchema[]
-      systemPrompt?: string
-  }): AsyncGenerator<LLMEvent> {
-      const { messages, tools, systemPrompt } = input
-
-      // 1. Map messages to ResponsesInput
-      const inputItems: ResponsesInputItem[] = []
+  private async *parseSSEStream(
+    body: ReadableStream<Uint8Array>,
+    parseEvent: (jsonStr: string, state: StreamParserState) => Generator<LLMEvent>,
+    state: StreamParserState
+  ): AsyncGenerator<LLMEvent> {
+    const reader = body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
       
-      // System prompt 使用 developer role（推荐）或 system role
-      if (systemPrompt) {
-          inputItems.push({
-              type: 'message',
-              role: 'developer',
-              content: [{ type: 'input_text', text: systemPrompt }]
-          })
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed === 'data: [DONE]') continue
+        if (!trimmed.startsWith('data: ')) continue
+        
+        const jsonStr = trimmed.slice(6)
+        if (jsonStr === '[DONE]') continue
+        
+        try {
+          yield* parseEvent(jsonStr, state)
+        } catch {
+          // 忽略解析错误，继续处理
+        }
       }
-
-      for (const msg of messages) {
-          // Responses API: user 消息用 user，assistant 历史记录暂不支持
-          // 注意：Responses API 的 input 不直接支持 assistant 角色，历史消息需要特殊处理
-          // 这里我们只处理 user 消息
-          if (msg.role !== 'user') continue  // 跳过 assistant 消息
-          
-          const blocks: ResponsesInputBlock[] = []
-
-          if (typeof msg.content === 'string') {
-              blocks.push({ type: 'input_text', text: msg.content })
-          } else {
-              for (const block of msg.content) {
-                  if (block.type === 'text') {
-                      blocks.push({ type: 'input_text', text: block.text })
-                  } else if (block.type === 'image') {
-                      blocks.push({ 
-                          type: 'input_image', 
-                          image_url: `data:${block.mimeType};base64,${block.data}`
-                      })
-                  }
-              }
-          }
-
-          inputItems.push({ type: 'message', role: 'user', content: blocks })
-      }
-
-      // 2. 构建请求体，包含 tools
-      const body: Record<string, unknown> = {
-          model: this.model,
-          input: inputItems,
-          stream: true
-      }
-
-      // 添加 tools（Responses API FunctionTool 格式）
-      if (tools && tools.length > 0) {
-          body.tools = tools.map(t => ({
-              type: 'function',
-              name: t.name,
-              description: t.description,
-              parameters: t.input_schema,
-              strict: false  // 禁用严格模式以提高兼容性
-          }))
-      }
-
-      console.debug(`[OpenAI-Responses] Sending to: ${url}`)
-      console.debug(`[OpenAI-Responses] Tools count: ${tools?.length || 0}`)
-      console.debug(`[OpenAI-Responses] Body: ${JSON.stringify(body, null, 2)}`)  // 临时启用调试
-      // console.debug(`[OpenAI-Responses] Body: ${JSON.stringify(body)}`)
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), this.config.timeout || 120000)
-
-      try {
-          const response = await fetch(url, {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${this.config.apiKey}`
-              },
-              body: JSON.stringify(body),
-              signal: controller.signal
-          })
-
-          clearTimeout(timeoutId)
-          // console.debug(`[OpenAI-Responses] Status: ${response.status}`)
-
-          if (!response.ok) {
-              const text = await response.text()
-              yield { type: 'error', message: `API Error ${response.status}: ${text}` }
-              return
-          }
-
-          if (!response.body) return
-
-          const reader = response.body.getReader()
-          const decoder = new TextDecoder()
-          let buffer = ''
-          let usage: TokenUsage | undefined
-
-          while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-
-              buffer += decoder.decode(value, { stream: true })
-              const lines = buffer.split('\n')
-              buffer = lines.pop() || ''
-
-              for (const line of lines) {
-                  const trimmed = line.trim()
-                  if (!trimmed || !trimmed.startsWith('data: ')) continue
-                  
-                  const jsonStr = trimmed.slice(6)
-                  if (jsonStr === '[DONE]') continue
-                  
-                  // Debug: Log raw chunk to verify structure
-                  // console.debug(`[OpenAI-Responses] Raw Chunk: ${jsonStr.slice(0, 500)}`)
-
-                  try {
-                      // Parse event as any to handle various event types dynamically
-                      const event = JSON.parse(jsonStr)
-                      
-                      // Debug: Log event type
-                      // console.debug(`[OpenAI-Responses] Event type: ${event.type}`)
-                      
-                      // Handle text delta
-                      if (event.type === 'response.output_text.delta') {
-                          if (event.delta) {
-                              yield { type: 'text_delta', content: event.delta }
-                          }
-                      }
-                      
-                      // Handle function call - when arguments are complete
-                      // 事件结构: { type: 'response.function_call_arguments.done', call_id: string, name: string, arguments: string }
-                      if (event.type === 'response.function_call_arguments.done') {
-                          const callId = event.call_id || event.id || `call_${Date.now()}`
-                          const fnName = event.name
-                          let fnArgs = {}
-                          
-                          try {
-                              fnArgs = event.arguments ? JSON.parse(event.arguments) : {}
-                          } catch {
-                              console.debug(`[OpenAI-Responses] Failed to parse function args: ${event.arguments}`)
-                          }
-                          
-                          console.debug(`[OpenAI-Responses] Function call: ${fnName}`)
-                          yield { type: 'tool_call', id: callId, name: fnName, args: fnArgs }
-                      }
-                      
-                      // Alternative: Handle function call from output_item.done event
-                      // 某些情况下 tool_use 会包装在 output_item 中
-                      if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
-                          const item = event.item
-                          const callId = item.call_id || item.id || `call_${Date.now()}`
-                          const fnName = item.name
-                          let fnArgs = {}
-                          
-                          try {
-                              fnArgs = item.arguments ? JSON.parse(item.arguments) : {}
-                          } catch {
-                              console.debug(`[OpenAI-Responses] Failed to parse function args from item`)
-                          }
-                          
-                          console.debug(`[OpenAI-Responses] Function call (from item): ${fnName}`)
-                          yield { type: 'tool_call', id: callId, name: fnName, args: fnArgs }
-                      }
-                      
-                      // Handle usage from completion event
-                      if (event.type === 'response.completed' && event.response?.usage) {
-                          usage = {
-                              promptTokens: event.response.usage.input_tokens || 0,
-                              completionTokens: event.response.usage.output_tokens || 0,
-                              totalTokens: (event.response.usage.input_tokens || 0) + (event.response.usage.output_tokens || 0) 
-                          }
-                      }
-                      
-                      // Old output structure fallback (just in case)
-                      if (event.output) {
-                          for (const item of event.output) {
-                              if (item.content) {
-                                  for (const block of item.content) {
-                                      if (block.type === 'output_text') {
-                                          yield { type: 'text_delta', content: block.text }
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  } catch (e) {
-                      console.debug('[OpenAI-Responses] Parse error:', e)
-                  }
-              }
-          }
-          yield { type: 'done', usage }
-
-      } catch (error: any) {
-          clearTimeout(timeoutId)
-          yield { type: 'error', message: error.message || String(error) }
-      }
+    }
   }
+}
+
+// ============================================================================
+// 辅助类型
+// ============================================================================
+
+interface StreamParserState {
+  pendingToolCalls: Map<number, { id: string; name: string; args: string }>
+  usage: TokenUsage | undefined
 }
