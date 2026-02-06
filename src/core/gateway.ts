@@ -91,9 +91,13 @@ export class AgentGateway {
     // 完整响应
     let fullResponse = ''
     
+    // 上一轮工具调用结果（跨迭代保存）
+    let lastToolResults: LLMToolResult[] = []
+    
     // 迭代处理（支持多轮工具调用）
     for (let iteration = 0; iteration < this.config.maxIterations!; iteration++) {
-      console.log(`[Gateway] Iteration ${iteration + 1}`)
+      const remaining = this.config.maxIterations! - iteration - 1
+      console.log(`[Gateway] Iteration ${iteration + 1}/${this.config.maxIterations} (${remaining} remaining)`)
       console.log(`[Gateway] Calling LLM with ${messages.length} messages...`)
       
       // 收集当前轮的工具调用
@@ -101,8 +105,8 @@ export class AgentGateway {
       let hasText = false
       void hasText // Mark as used to suppress warning
       
-      // 调用 LLM
-      const toolResults: LLMToolResult[] = iteration > 0 ? [] : undefined as unknown as LLMToolResult[]
+      // 调用 LLM，传入上一轮的工具结果
+      const toolResults = lastToolResults.length > 0 ? lastToolResults : undefined
       
       for await (const event of this.llm.chat({
         messages,
@@ -110,7 +114,6 @@ export class AgentGateway {
         toolResults,
         systemPrompt
       })) {
-        console.log(`[Gateway] Received LLM event: ${event.type}`)
         switch (event.type) {
           case 'text_delta':
             fullResponse += event.content
@@ -142,6 +145,7 @@ export class AgentGateway {
       
       // 处理工具调用
       if (pendingToolCalls.length === 0) {
+        console.log(`[Gateway] No tool calls, returning fullResponse (${fullResponse.length} chars): ${fullResponse.slice(0, 100)}...`)
         yield { type: 'done', fullResponse }
         return
       }
@@ -225,6 +229,9 @@ export class AgentGateway {
         })
       }
       
+      // 保存到下一轮
+      lastToolResults = toolResultsForNextRound
+      
       // 将工具结果添加到消息历史
       // 添加 assistant 的工具调用消息
       messages.push({
@@ -242,6 +249,7 @@ export class AgentGateway {
     }
     
     // 超过最大迭代次数
-    yield { type: 'error', message: 'Max iterations reached' }
+    console.log(`[Gateway] Max iterations (${this.config.maxIterations}) reached, stopping`)
+    yield { type: 'error', message: `Max iterations (${this.config.maxIterations}) reached. Task may be incomplete.` }
   }
 }

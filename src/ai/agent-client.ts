@@ -113,9 +113,9 @@ ${skillsList}
   
   // 4. 创建 Agent Gateway
   agentGateway = new AgentGateway(llmAdapter, toolRegistry, policyEngine, {
-    maxIterations: 10
+    maxIterations: config.llm.maxIterations || 10
   })
-  logger.info('Agent Gateway created')
+  logger.info(`Agent Gateway created (maxIterations: ${config.llm.maxIterations || 10})`)
   
   logger.info('Agent Client initialized successfully!')
 }

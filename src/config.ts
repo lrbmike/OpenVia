@@ -49,6 +49,7 @@ export interface AppConfig {
     temperature?: number
     systemPrompt?: string
     shellConfirmList?: string[]
+    maxIterations?: number
   }
   /** @deprecated Use llm instead */
   claude: {

@@ -19,6 +19,7 @@
     "systemPrompt": "You are a helpful AI assistant. You are running on Windows operating system. Use PowerShell or CMD commands, NOT Linux commands.",
     "timeout": 120000,
     "maxTokens": 4096,
+    "maxIterations": 10,
     "temperature": 0.7,
     "shellConfirmList": ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown", "del", "rmdir"]
   },
