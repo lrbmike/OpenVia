@@ -12,6 +12,38 @@ import type { ContentBlock } from '../types/protocol'
 const logger = new Logger('TelegramChannel')
 const MAX_MESSAGE_LENGTH = 4000
 
+/**
+ * Escape HTML special characters
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+/**
+ * Basic Markdown to HTML converter for permission requests
+ * Handles *bold* and `code`
+ */
+function formatMarkdownToHtml(markdown: string): string {
+  // 1. First, split by code blocks to avoid escaping content inside code
+  const parts = markdown.split(/(`[^`]+`)/g)
+  
+  return parts.map(part => {
+    if (part.startsWith('`') && part.endsWith('`')) {
+      // It's a code block
+      const codeContent = part.slice(1, -1)
+      return `<code>${escapeHtml(codeContent)}</code>`
+    } else {
+      // It's normal text, escape HTML and then handle bold
+      let escaped = escapeHtml(part)
+      // *bold* -> <b>bold</b>
+      return escaped.replace(/\*([^\*]+)\*/g, '<b>$1</b>')
+    }
+  }).join('')
+}
+
 export class TelegramChannel implements Channel {
   public id = 'telegram'
   private bot: Bot | null = null
@@ -210,13 +242,16 @@ export class TelegramChannel implements Channel {
           .text('❌ Deny', `perm:deny:${req.id}`)
 
       try {
-          await this.bot.api.sendMessage(userId, req.message, {
-              parse_mode: 'Markdown',
+          const htmlMessage = formatMarkdownToHtml(req.message)
+          await this.bot.api.sendMessage(userId, htmlMessage, {
+              parse_mode: 'HTML',
               reply_markup: keyboard
           })
           logger.info(`Sent permission request ${req.id} to user ${userId}`)
       } catch (e) {
           logger.error(`Failed to send permission request to ${userId}`, e)
+          // Detailed log of the failing message to help debug
+          logger.error(`Failing message content: ${req.message}`)
       }
   }
 

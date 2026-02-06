@@ -131,7 +131,7 @@ export class PolicyEngine {
       if (requiresConfirmation) {
         return {
           type: 'require_approval',
-          prompt: `⚠️ *Permission Request*\n\nTool: \`${tool.name}\`\nCommand: \`${command}\``
+          prompt: `⚠️ *Permission Request*\n\nTool: \`${tool.name}\`\nCommand:\n\`\`\`\n${command}\n\`\`\``
         }
       }
       return { type: 'allow' }

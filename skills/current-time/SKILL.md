@@ -1,60 +1,68 @@
 ---
 name: Current Time Expert
-description: Get the current system time, handle timezone conversions, and format dates/times across different operating systems.
-version: 1.0.0
+description: Get the current system time, handle timezone conversions accurately by identifying OS and system timezone, and format dates/times across different environments.
+version: 1.1.0
 author: OpenVia
-tags: [time, datetime, utility, timezone]
+tags: [time, datetime, utility, timezone, bun, powershell]
 ---
 
 # Current Time Expert
 
-This skill allows the agent to provide accurate system time, format date/time
-strings, and perform timezone calculations by executing terminal commands.
+This skill allows the agent to provide precision system time and perform
+accurate timezone conversions. It prioritizes environment detection to avoid
+errors caused by OS differences.
 
-## Getting Current Time
+## 1. Environment Detection (Critical)
 
-Always use the `bash` tool to execute commands for real-time accuracy. Avoid
-relying on internal knowledge as it has a cutoff date.
+Before getting the time, always identify the environment to choose the correct
+command:
 
-### Multi-Platform Commands
+- **Detect OS**: Check if running on `Windows` (PowerShell) or
+  `Linux/macOS/Docker` (Bash/Zsh).
+- **Detect System Timezone**:
+  - **Windows**: `[System.TimeZoneInfo]::Local.Id`
+  - **Linux**: `cat /etc/timezone` or `date +%Z`
 
-| Platform                 | Command Example                                                |
-| :----------------------- | :------------------------------------------------------------- |
-| **Windows (PowerShell)** | `powershell -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"` |
-| **Linux / macOS**        | `date '+%Y-%m-%d %H:%M:%S'`                                    |
+## 2. High-Precision Cross-Platform Method (Recommended)
 
-## Time Formatting
+Use **Bun** or **Node.js** for the most reliable timezone handling. This avoids
+OS-specific timezone database issues.
 
-Provide time in various formats based on user requirements.
+### Get Time in Specific Timezone (e.g., Seoul)
 
-| Format Type        | Example Output              | PowerShell Command              |
-| :----------------- | :-------------------------- | :------------------------------ |
-| **ISO 8601**       | `2026-02-06T12:15:07+08:00` | `Get-Date -Format o`            |
-| **Date Only**      | `2026-02-06`                | `Get-Date -Format 'yyyy-MM-dd'` |
-| **Time Only**      | `12:15:07`                  | `Get-Date -Format 'HH:mm:ss'`   |
-| **Human Readable** | `Friday, February 6, 2026`  | `(Get-Date).ToLongDateString()` |
-
-## Timezone Handling
-
-To get time in specific timezones or UTC:
-
-### UTC Time
-
-```powershell
-[System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
+```bash
+bun -e "console.log(new Intl.DateTimeFormat('zh-CN', { dateStyle: 'full', timeStyle: 'medium', timeZone: 'Asia/Seoul' }).format(new Date()))"
 ```
 
-### Specific Timezone (Example: Tokyo)
+_Note: This automatically handles Daylight Saving Time (DST) and uses standard
+IANA Timezone IDs._
 
-```powershell
-[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::Now, 'Tokyo Standard Time').ToString('yyyy-MM-dd HH:mm:ss')
-```
+## 3. OS-Specific Commands
 
-## Best Practices
+### Windows (PowerShell)
 
-1. **Always Verify**: Never guess the time. Use system commands to ensure
-   accuracy.
-2. **Context Aware**: Adjust the output format and timezone according to the
-   user's location or explicit request.
-3. **Cross-Platform**: Detect the target environment and choose the appropriate
-   `date` or `powershell` command.
+| Requirement            | PowerShell Command                                                                                                             |
+| :--------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| **Current Local Time** | `Get-Date -Format 'yyyy-MM-dd HH:mm:ss'`                                                                                       |
+| **UTC Time**           | `[System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')`                                                                    |
+| **Convert Timezone**   | `[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::Now, 'Tokyo Standard Time').ToString('yyyy-MM-dd HH:mm:ss')` |
+
+### Linux / macOS (Bash)
+
+| Requirement            | Bash Command                                |
+| :--------------------- | :------------------------------------------ |
+| **Current Local Time** | `date '+%Y-%m-%d %H:%M:%S'`                 |
+| **UTC Time**           | `date -u '+%Y-%m-%d %H:%M:%S'`              |
+| **Convert Timezone**   | `TZ='Asia/Seoul' date '+%Y-%m-%d %H:%M:%S'` |
+
+## 4. Best Practices
+
+1. **Identify OS First**: Never assume the environment. Run a quick check if
+   unsure.
+2. **Use IANA IDs**: For timezone conversion, prefer `Asia/Shanghai`,
+   `America/New_York` style names, especially with the Bun/Node.js method.
+3. **Reference UTC**: If direct conversion fails, get the current UTC time
+   first: `[DateTime]::UtcNow` (Win) or `date -u` (Linux), then apply the
+   offset.
+4. **Avoid Hardcoding Offsets**: Let the system (Intl API or TZ database) handle
+   DST and leap seconds.
