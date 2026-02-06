@@ -441,7 +441,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       
       const id = cached?.callId || event.call_id || event.id || `call_${Date.now()}`
       const name = cached?.name || event.name || ''
-      yield* this.emitFunctionCall(id, name, event.arguments)
+      
+      if (!state.emittedCallIds.has(id)) {
+        state.emittedCallIds.add(id)
+        yield* this.emitFunctionCall(id, name, event.arguments)
+      }
     }
     
     // 函数调用完成（方式2：通过 output_item）
@@ -452,7 +456,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       
       const id = item.call_id || cached?.callId || item.id || `call_${Date.now()}`
       const name = item.name || cached?.name || ''
-      yield* this.emitFunctionCall(id, name, item.arguments)
+      
+      if (!state.emittedCallIds.has(id)) {
+        state.emittedCallIds.add(id)
+        yield* this.emitFunctionCall(id, name, item.arguments)
+      }
     }
     
     // 响应完成，提取 usage
@@ -532,6 +540,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       const state: StreamParserState = {
         pendingToolCalls: new Map(),
         responsesItems: new Map(),
+        emittedCallIds: new Set(),
         usage: undefined
       }
       
@@ -598,5 +607,7 @@ interface StreamParserState {
   pendingToolCalls: Map<number, { id: string; name: string; args: string }>
   // Map item_id to { call_id, name }
   responsesItems: Map<string, { callId: string; name: string }>
+  // Track emitted call IDs to prevent duplicates
+  emittedCallIds: Set<string>
   usage: TokenUsage | undefined
 }

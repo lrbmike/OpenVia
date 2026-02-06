@@ -232,9 +232,12 @@ export class GeminiFormatAdapter implements LLMAdapter {
                     yield { type: 'text_delta', content: part.text }
                   }
                   if ('functionCall' in part) {
+                    // Gemini 不提供 call_id，我们需要生成唯一的 ID
+                    // 以支持同一函数的多次并发调用
+                    const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
                     yield {
                       type: 'tool_call',
-                      id: part.functionCall.name, // Gemini 没有单独的 id，用 name
+                      id: callId,
                       name: part.functionCall.name,
                       args: part.functionCall.args
                     }
