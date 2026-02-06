@@ -91,7 +91,8 @@ interface ResponsesInputBlock {
 }
 
 interface ResponsesInputItem {
-  role: 'user' | 'assistant'
+  type: 'message'
+  role: 'user' | 'system' | 'developer' | 'assistant'
   content: ResponsesInputBlock[]
 }
 
@@ -399,26 +400,37 @@ export class OpenAIFormatAdapter implements LLMAdapter {
 
   /**
    * Handle /v1/responses protocol (Phase 13)
+   * 
+   * OpenAI Responses API 使用不同的请求格式：
+   * - tools: 定义在顶层（与 Chat Completions 类似）
+   * - input: 消息数组
+   * - 事件类型: response.function_call_arguments.done
    */
   private async *chatWithResponses(url: string, input: {
       messages: Message[]
       tools?: ToolSchema[]
       systemPrompt?: string
   }): AsyncGenerator<LLMEvent> {
-      const { messages, systemPrompt } = input
+      const { messages, tools, systemPrompt } = input
 
       // 1. Map messages to ResponsesInput
       const inputItems: ResponsesInputItem[] = []
       
+      // System prompt 使用 developer role（推荐）或 system role
       if (systemPrompt) {
           inputItems.push({
-              role: 'user', // Mapping system to user for "content flow" model
-              content: [{ type: 'input_text', text: `[System Instruction]\n${systemPrompt}` }]
+              type: 'message',
+              role: 'developer',
+              content: [{ type: 'input_text', text: systemPrompt }]
           })
       }
 
       for (const msg of messages) {
-          const role = msg.role === 'assistant' ? 'assistant' : 'user'
+          // Responses API: user 消息用 user，assistant 历史记录暂不支持
+          // 注意：Responses API 的 input 不直接支持 assistant 角色，历史消息需要特殊处理
+          // 这里我们只处理 user 消息
+          if (msg.role !== 'user') continue  // 跳过 assistant 消息
+          
           const blocks: ResponsesInputBlock[] = []
 
           if (typeof msg.content === 'string') {
@@ -436,16 +448,30 @@ export class OpenAIFormatAdapter implements LLMAdapter {
               }
           }
 
-          inputItems.push({ role, content: blocks })
+          inputItems.push({ type: 'message', role: 'user', content: blocks })
       }
 
-      const body = {
+      // 2. 构建请求体，包含 tools
+      const body: Record<string, unknown> = {
           model: this.model,
           input: inputItems,
           stream: true
       }
 
-      // console.debug(`[OpenAI-Responses] Sending to: ${url}`)
+      // 添加 tools（Responses API FunctionTool 格式）
+      if (tools && tools.length > 0) {
+          body.tools = tools.map(t => ({
+              type: 'function',
+              name: t.name,
+              description: t.description,
+              parameters: t.input_schema,
+              strict: false  // 禁用严格模式以提高兼容性
+          }))
+      }
+
+      console.debug(`[OpenAI-Responses] Sending to: ${url}`)
+      console.debug(`[OpenAI-Responses] Tools count: ${tools?.length || 0}`)
+      console.debug(`[OpenAI-Responses] Body: ${JSON.stringify(body, null, 2)}`)  // 临时启用调试
       // console.debug(`[OpenAI-Responses] Body: ${JSON.stringify(body)}`)
 
       const controller = new AbortController()
@@ -500,11 +526,49 @@ export class OpenAIFormatAdapter implements LLMAdapter {
                       // Parse event as any to handle various event types dynamically
                       const event = JSON.parse(jsonStr)
                       
+                      // Debug: Log event type
+                      // console.debug(`[OpenAI-Responses] Event type: ${event.type}`)
+                      
                       // Handle text delta
                       if (event.type === 'response.output_text.delta') {
                           if (event.delta) {
                               yield { type: 'text_delta', content: event.delta }
                           }
+                      }
+                      
+                      // Handle function call - when arguments are complete
+                      // 事件结构: { type: 'response.function_call_arguments.done', call_id: string, name: string, arguments: string }
+                      if (event.type === 'response.function_call_arguments.done') {
+                          const callId = event.call_id || event.id || `call_${Date.now()}`
+                          const fnName = event.name
+                          let fnArgs = {}
+                          
+                          try {
+                              fnArgs = event.arguments ? JSON.parse(event.arguments) : {}
+                          } catch {
+                              console.debug(`[OpenAI-Responses] Failed to parse function args: ${event.arguments}`)
+                          }
+                          
+                          console.debug(`[OpenAI-Responses] Function call: ${fnName}`)
+                          yield { type: 'tool_call', id: callId, name: fnName, args: fnArgs }
+                      }
+                      
+                      // Alternative: Handle function call from output_item.done event
+                      // 某些情况下 tool_use 会包装在 output_item 中
+                      if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+                          const item = event.item
+                          const callId = item.call_id || item.id || `call_${Date.now()}`
+                          const fnName = item.name
+                          let fnArgs = {}
+                          
+                          try {
+                              fnArgs = item.arguments ? JSON.parse(item.arguments) : {}
+                          } catch {
+                              console.debug(`[OpenAI-Responses] Failed to parse function args from item`)
+                          }
+                          
+                          console.debug(`[OpenAI-Responses] Function call (from item): ${fnName}`)
+                          yield { type: 'tool_call', id: callId, name: fnName, args: fnArgs }
                       }
                       
                       // Handle usage from completion event
