@@ -161,12 +161,20 @@ export function getLogsDir(): string {
 }
 
 /**
+ * Get Skills Directory Path
+ */
+export function getSkillsDir(): string {
+  return join(getConfigDir(), 'skills')
+}
+
+/**
  * Ensure Configuration Directory Structure Exists
  */
 export function ensureConfigDir(): void {
   const configDir = getConfigDir()
   const sessionsDir = getSessionsDir()
   const logsDir = getLogsDir()
+  const skillsDir = getSkillsDir()
 
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true })
@@ -176,6 +184,9 @@ export function ensureConfigDir(): void {
   }
   if (!existsSync(logsDir)) {
     mkdirSync(logsDir, { recursive: true })
+  }
+  if (!existsSync(skillsDir)) {
+    mkdirSync(skillsDir, { recursive: true })
   }
 }
 
