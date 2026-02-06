@@ -3,9 +3,15 @@
  */
 
 /** Conversation Message */
+/** Content Block (Text or Image) */
+export type ContentBlock = 
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string } // data is base64
+
+/** Conversation Message */
 export interface Message {
   role: 'user' | 'assistant' | 'system'
-  content: string
+  content: string | ContentBlock[]
 }
 
 /** Task Input - Orchestrator → Claude */

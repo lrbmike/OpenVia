@@ -137,15 +137,15 @@ openvia
 
 ### LLM 配置
 
-| 字段               | 说明                                     |
-| ------------------ | ---------------------------------------- |
-| `format`           | API 格式: `openai`、`claude` 或 `gemini` |
-| `apiKey`           | 你的 API 密钥                            |
-| `baseUrl`          | API 端点（支持自定义代理）               |
-| `model`            | 模型名称（如 `gpt-4o`、`qwen-max`）      |
-| `systemPrompt`     | 所有对话的系统提示词                     |
-| `maxIterations`    | 每条消息最大工具调用轮次（默认: 10）     |
-| `shellConfirmList` | 需要用户确认的命令列表                   |
+| 字段               | 说明                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `format`           | API 格式: `openai`、`claude` 或 `gemini`                                                                |
+| `apiKey`           | 你的 API 密钥                                                                                           |
+| `baseUrl`          | API 端点。若以 `/chat/completions` 或 `/responses` 结尾，则直接使用；否则自动拼接 `/chat/completions`。 |
+| `model`            | 模型名称（如 `gpt-4o`、`qwen-max`）                                                                     |
+| `systemPrompt`     | 所有对话的系统提示词                                                                                    |
+| `maxIterations`    | 每条消息最大工具调用轮次（默认: 10）                                                                    |
+| `shellConfirmList` | 需要用户确认的命令列表                                                                                  |
 
 ### 支持的 LLM 提供商
 

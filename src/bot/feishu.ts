@@ -3,6 +3,7 @@ import { Channel } from './types'
 import { Logger } from '../utils/logger'
 import { isUserAllowed, logAudit } from '../orchestrator/policy'
 import { PermissionBridge, PendingRequest } from '../utils/permission-bridge'
+import type { ContentBlock } from '../types/protocol'
 
 const logger = new Logger('FeishuChannel')
 
@@ -29,7 +30,7 @@ export class FeishuChannel implements Channel {
   }
 
   async start(
-    messageHandler: (input: string, userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
+    messageHandler: (input: string | ContentBlock[], userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
   ): Promise<void> {
     logger.info('Starting Feishu bot...')
 
@@ -42,6 +43,11 @@ export class FeishuChannel implements Channel {
         'im.message.receive_v1': async (data) => {
             const messageId = data.message.message_id
             
+            // Debug: Log message structure
+            // logger.debug(`[Feishu] Raw message data keys: ${Object.keys(data.message)}`)
+            // @ts-ignore
+            // logger.debug(`[Feishu] msg_type: ${data.message.msg_type}, message_type: ${data.message.message_type}`)
+
             // Deduplication
             if (this.processedMessages.has(messageId)) {
                 logger.debug(`Duplicate message detected: ${messageId}, skipping.`)
@@ -65,7 +71,60 @@ export class FeishuChannel implements Channel {
                 return;
             }
             
-            const text = content.text
+            let text = ''
+            let imageContent: ContentBlock | null = null
+
+            // Handle Text
+            // @ts-ignore - Check both possible property names
+            const msgType = data.message.msg_type || data.message.message_type
+            
+            if (msgType === 'text') {
+                 text = content.text
+            } 
+            // Handle Image
+            else if (msgType === 'image') {
+                 // @ts-ignore
+                 const imageKey = content.image_key
+                 logger.info(`Received image from ${userId}: ${imageKey}`)
+                 
+                 try {
+                     // Download image
+                     // Use messageResource instead of message.resource
+                     const response = await this.client.im.messageResource.get({
+                         path: { message_id: messageId, file_key: imageKey },
+                         params: { type: 'image' }
+                     })
+                     
+                     // Read stream to buffer
+                     const chunks: Buffer[] = []
+                     // @ts-ignore 
+                     const stream = response as any 
+                     
+                     for await (const chunk of stream) {
+                         chunks.push(Buffer.from(chunk))
+                     }
+                     const buffer = Buffer.concat(chunks)
+                     const base64 = buffer.toString('base64')
+                     
+                     text = '[Image Message]'
+                     imageContent = {
+                         type: 'image',
+                         data: base64,
+                         mimeType: 'image/jpeg' 
+                     }
+                 } catch (err) {
+                     logger.error(`Failed to download image ${imageKey}`, err)
+                     await this.client.im.message.reply({
+                        path: { message_id: messageId },
+                        data: { content: JSON.stringify({ text: "❌ Failed to download image." }), msg_type: 'text' }
+                     })
+                     return
+                 }
+            }
+            else {
+                logger.warn(`[Feishu] Unsupported message type: ${msgType}`)
+                return
+            }
             
             logger.info(`Received from ${userId}: ${text}`)
 
@@ -128,7 +187,8 @@ export class FeishuChannel implements Channel {
 
             // Notice: We don't await messageHandler here to return to Feishu quickly
             // Pass this.id ('feishu') as channelId
-            messageHandler(text, userId, this.id, sendReply).catch(error => {
+            const finalInput = imageContent ? [imageContent] : text
+            messageHandler(finalInput, userId, this.id, sendReply).catch(error => {
                 logger.error('Error handling message:', error)
                 sendReply('❌ An error occurred while processing your request.')
             })

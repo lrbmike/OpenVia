@@ -29,6 +29,7 @@ interface ClaudeMessage {
 
 type ClaudeContentBlock = 
   | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
 
@@ -95,10 +96,34 @@ export class ClaudeFormatAdapter implements LLMAdapter {
     
     // 转换消息历史
     for (const msg of messages) {
-      claudeMessages.push({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content
-      })
+      if (typeof msg.content === 'string') {
+        claudeMessages.push({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content
+        })
+      } else {
+        // Structured content (ContentBlock[])
+        const content: ClaudeContentBlock[] = msg.content.map(block => {
+          if (block.type === 'text') {
+            return { type: 'text' as const, text: block.text }
+          } else {
+            // Image block
+            return {
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: block.mimeType,
+                data: block.data
+              }
+            }
+          }
+        })
+        
+        claudeMessages.push({
+          role: msg.role as 'user' | 'assistant',
+          content
+        })
+      }
     }
     
     // 添加 tool results（如果有）- Claude 需要将 tool_result 作为 user 消息

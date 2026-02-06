@@ -29,6 +29,7 @@ interface GeminiContent {
 
 type GeminiPart = 
   | { text: string }
+  | { inlineData: { mimeType: string; data: string } }
   | { functionCall: { name: string; args: Record<string, unknown> } }
   | { functionResponse: { name: string; response: { content: string } } }
 
@@ -91,10 +92,32 @@ export class GeminiFormatAdapter implements LLMAdapter {
     
     // 转换消息历史
     for (const msg of messages) {
-      geminiContents.push({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      })
+      if (typeof msg.content === 'string') {
+        geminiContents.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        })
+      } else {
+        // Structured content (ContentBlock[])
+        const parts: GeminiPart[] = msg.content.map(block => {
+          if (block.type === 'text') {
+            return { text: block.text }
+          } else {
+            // Image block
+            return {
+              inlineData: {
+                mimeType: block.mimeType,
+                data: block.data
+              }
+            }
+          }
+        })
+        
+        geminiContents.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts
+        })
+      }
     }
     
     // 添加 tool results（如果有）

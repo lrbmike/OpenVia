@@ -26,7 +26,7 @@ import type {
 
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
+  content: string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> | null
   tool_calls?: OpenAIToolCall[]
   tool_call_id?: string
 }
@@ -81,6 +81,41 @@ interface OpenAIStreamChunk {
 }
 
 // ============================================================================
+// Responses API Types (Phase 13)
+// ============================================================================
+
+interface ResponsesInputBlock {
+  type: 'input_text' | 'input_image'
+  text?: string
+  image_url?: string
+}
+
+interface ResponsesInputItem {
+  role: 'user' | 'assistant'
+  content: ResponsesInputBlock[]
+}
+
+interface ResponsesOutputBlock {
+  type: 'output_text'
+  text: string
+}
+
+interface ResponsesOutputItem {
+  id: string
+  type: 'message'
+  role: 'assistant'
+  content: ResponsesOutputBlock[]
+}
+
+interface ResponsesStreamEvent {
+  output?: ResponsesOutputItem[]
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+  }
+}
+
+// ============================================================================
 // OpenAI Format Adapter 实现
 // ============================================================================
 
@@ -130,11 +165,34 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     }
     
     // 转换消息历史
+    // 转换消息历史
     for (const msg of messages) {
-      openaiMessages.push({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content
-      })
+      if (typeof msg.content === 'string') {
+        openaiMessages.push({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content
+        })
+      } else {
+        // Structured content (ContentBlock[])
+        const content = msg.content.map(block => {
+          if (block.type === 'text') {
+            return { type: 'text' as const, text: block.text }
+          } else {
+            // Image block
+            return {
+              type: 'image_url' as const,
+              image_url: {
+                url: `data:${block.mimeType};base64,${block.data}`
+              }
+            }
+          }
+        })
+        
+        openaiMessages.push({
+          role: msg.role as 'user' | 'assistant',
+          content
+        })
+      }
     }
     
     // 添加 tool results（如果有）
@@ -159,7 +217,21 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     }))
     
     // 发起请求
-    const url = `${this.config.baseUrl.replace(/\/$/, '')}/chat/completions`
+    let url = this.config.baseUrl.replace(/\/$/, '')
+    
+    // Check for /responses mode (Phase 13)
+    const isResponsesMode = url.endsWith('/responses')
+    
+    if (isResponsesMode) {
+      // Delegate to new protocol handler
+      yield* this.chatWithResponses(url, input)
+      return
+    }
+
+    // Standard OpenAI mode
+    if (!url.endsWith('/chat/completions')) {
+      url += '/chat/completions'
+    }
     
     const body: Record<string, unknown> = {
       model: this.model,
@@ -180,6 +252,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       body.temperature = this.config.temperature
     }
     
+    // Debug logging
+    // console.debug(`[OpenAI] Sending request to: ${url}`)
+    // console.debug(`[OpenAI] Model: ${this.model}`)
+    // console.debug(`[OpenAI] Body: ${JSON.stringify(body)}`) // Uncomment if needed, but reduce noise
+
     const controller = new AbortController()
     const timeout = this.config.timeout || 120000
     const timeoutId = setTimeout(() => controller.abort(), timeout)
@@ -196,6 +273,10 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       })
       
       clearTimeout(timeoutId)
+      
+      clearTimeout(timeoutId)
+      
+      // console.debug(`[OpenAI] Response status: ${response.status}`)
       
       if (!response.ok) {
         const errorText = await response.text()
@@ -314,5 +395,149 @@ export class OpenAIFormatAdapter implements LLMAdapter {
         yield { type: 'error', message: String(error) }
       }
     }
+  }
+
+  /**
+   * Handle /v1/responses protocol (Phase 13)
+   */
+  private async *chatWithResponses(url: string, input: {
+      messages: Message[]
+      tools?: ToolSchema[]
+      systemPrompt?: string
+  }): AsyncGenerator<LLMEvent> {
+      const { messages, systemPrompt } = input
+
+      // 1. Map messages to ResponsesInput
+      const inputItems: ResponsesInputItem[] = []
+      
+      if (systemPrompt) {
+          inputItems.push({
+              role: 'user', // Mapping system to user for "content flow" model
+              content: [{ type: 'input_text', text: `[System Instruction]\n${systemPrompt}` }]
+          })
+      }
+
+      for (const msg of messages) {
+          const role = msg.role === 'assistant' ? 'assistant' : 'user'
+          const blocks: ResponsesInputBlock[] = []
+
+          if (typeof msg.content === 'string') {
+              blocks.push({ type: 'input_text', text: msg.content })
+          } else {
+              for (const block of msg.content) {
+                  if (block.type === 'text') {
+                      blocks.push({ type: 'input_text', text: block.text })
+                  } else if (block.type === 'image') {
+                      blocks.push({ 
+                          type: 'input_image', 
+                          image_url: `data:${block.mimeType};base64,${block.data}`
+                      })
+                  }
+              }
+          }
+
+          inputItems.push({ role, content: blocks })
+      }
+
+      const body = {
+          model: this.model,
+          input: inputItems,
+          stream: true
+      }
+
+      // console.debug(`[OpenAI-Responses] Sending to: ${url}`)
+      // console.debug(`[OpenAI-Responses] Body: ${JSON.stringify(body)}`)
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), this.config.timeout || 120000)
+
+      try {
+          const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${this.config.apiKey}`
+              },
+              body: JSON.stringify(body),
+              signal: controller.signal
+          })
+
+          clearTimeout(timeoutId)
+          // console.debug(`[OpenAI-Responses] Status: ${response.status}`)
+
+          if (!response.ok) {
+              const text = await response.text()
+              yield { type: 'error', message: `API Error ${response.status}: ${text}` }
+              return
+          }
+
+          if (!response.body) return
+
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let usage: TokenUsage | undefined
+
+          while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              buffer += decoder.decode(value, { stream: true })
+              const lines = buffer.split('\n')
+              buffer = lines.pop() || ''
+
+              for (const line of lines) {
+                  const trimmed = line.trim()
+                  if (!trimmed || !trimmed.startsWith('data: ')) continue
+                  
+                  const jsonStr = trimmed.slice(6)
+                  if (jsonStr === '[DONE]') continue
+                  
+                  // Debug: Log raw chunk to verify structure
+                  // console.debug(`[OpenAI-Responses] Raw Chunk: ${jsonStr.slice(0, 500)}`)
+
+                  try {
+                      // Parse event as any to handle various event types dynamically
+                      const event = JSON.parse(jsonStr)
+                      
+                      // Handle text delta
+                      if (event.type === 'response.output_text.delta') {
+                          if (event.delta) {
+                              yield { type: 'text_delta', content: event.delta }
+                          }
+                      }
+                      
+                      // Handle usage from completion event
+                      if (event.type === 'response.completed' && event.response?.usage) {
+                          usage = {
+                              promptTokens: event.response.usage.input_tokens || 0,
+                              completionTokens: event.response.usage.output_tokens || 0,
+                              totalTokens: (event.response.usage.input_tokens || 0) + (event.response.usage.output_tokens || 0) 
+                          }
+                      }
+                      
+                      // Old output structure fallback (just in case)
+                      if (event.output) {
+                          for (const item of event.output) {
+                              if (item.content) {
+                                  for (const block of item.content) {
+                                      if (block.type === 'output_text') {
+                                          yield { type: 'text_delta', content: block.text }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  } catch (e) {
+                      console.debug('[OpenAI-Responses] Parse error:', e)
+                  }
+              }
+          }
+          yield { type: 'done', usage }
+
+      } catch (error: any) {
+          clearTimeout(timeoutId)
+          yield { type: 'error', message: error.message || String(error) }
+      }
   }
 }

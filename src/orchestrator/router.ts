@@ -43,13 +43,21 @@ export function getRouterConfig(): RouterConfig {
  * 
  * 使用新的 Agent Client 架构
  */
+import type { ContentBlock } from '../types/protocol'
+
+/**
+ * Handle user message (Orchestrator core loop)
+ * 
+ * 使用新的 Agent Client 架构
+ */
 export async function handleMessage(
-  input: string,
+  input: string | ContentBlock[],
   userId: string,
   channelId: string,
   sendReply: (text: string) => Promise<void>
 ): Promise<void> {
-  logger.info(`Handling message from ${userId} via ${channelId}: ${input.slice(0, 50)}...`)
+  const logContent = typeof input === 'string' ? input : '[Multimedia Message]'
+  logger.info(`Handling message from ${userId} via ${channelId}: ${logContent.slice(0, 50)}...`)
 
   return runWithContext({ userId, channelId, sendReply }, async () => {
     // Permission check

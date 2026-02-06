@@ -142,15 +142,15 @@ openvia
 
 ### LLM Configuration
 
-| Field              | Description                                    |
-| ------------------ | ---------------------------------------------- |
-| `format`           | API format: `openai`, `claude`, or `gemini`    |
-| `apiKey`           | Your API key                                   |
-| `baseUrl`          | API endpoint (supports custom proxies)         |
-| `model`            | Model name (e.g., `gpt-4o`, `qwen-max`)        |
-| `systemPrompt`     | System prompt for all conversations            |
-| `maxIterations`    | Max tool call rounds per message (default: 10) |
-| `shellConfirmList` | Commands requiring user confirmation           |
+| Field              | Description                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `format`           | API format: `openai`, `claude`, or `gemini`                                                                                     |
+| `apiKey`           | Your API key                                                                                                                    |
+| `baseUrl`          | API endpoint. If it ends with `/chat/completions` or `/responses`, it's used as-is. Otherwise, `/chat/completions` is appended. |
+| `model`            | Model name (e.g., `gpt-4o`, `qwen-max`)                                                                                         |
+| `systemPrompt`     | System prompt for all conversations                                                                                             |
+| `maxIterations`    | Max tool call rounds per message (default: 10)                                                                                  |
+| `shellConfirmList` | Commands requiring user confirmation                                                                                            |
 
 ### Supported LLM Providers
 

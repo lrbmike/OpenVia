@@ -11,7 +11,7 @@
  * - 不做权限判断（交给 Policy）
  */
 
-import type { Message } from '../types'
+
 import type { LLMAdapter, ToolResult as LLMToolResult } from '../llm/adapter'
 import type { ToolRegistry, ToolResult, ExecutionContext } from './registry'
 import type { PolicyEngine, SessionContext } from './policy'
@@ -31,8 +31,11 @@ export type AgentEvent =
   | { type: 'error'; message: string }
 
 /** Agent 输入 */
+import type { Message, ContentBlock } from '../types'
+
+/** Agent 输入 */
 export interface AgentInput {
-  message: string
+  message: string | ContentBlock[]
   session: SessionContext
   systemPrompt?: string
   onPermissionRequest?: (prompt: string) => Promise<boolean>

@@ -139,8 +139,15 @@ export function stopAgentClient(): void {
  * 
  * 返回格式与旧 `callClaude` 兼容
  */
+import type { ContentBlock } from '../types/protocol'
+
+/**
+ * 调用 Agent 处理消息
+ * 
+ * 返回格式与旧 `callClaude` 兼容
+ */
 export async function callAgent(
-  message: string,
+  message: string | ContentBlock[],
   _context: { history: unknown[] },
   requestContext: RequestContext
 ): Promise<{ action: 'reply' | 'error'; message?: string }> {

@@ -7,6 +7,7 @@ import { Logger } from '../utils/logger'
 import { Channel } from './types'
 import { PermissionBridge, PendingRequest } from '../utils/permission-bridge'
 import { InlineKeyboard } from 'grammy'
+import type { ContentBlock } from '../types/protocol'
 
 const logger = new Logger('TelegramChannel')
 const MAX_MESSAGE_LENGTH = 4000
@@ -21,7 +22,7 @@ export class TelegramChannel implements Channel {
   }
 
   async start(
-    messageHandler: (input: string, userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
+    messageHandler: (input: string | ContentBlock[], userId: string, channelId: string, sendReply: (text: string) => Promise<void>) => Promise<void>
   ): Promise<void> {
     if (!this.token) {
       throw new Error('Telegram bot token not provided')
@@ -108,9 +109,46 @@ export class TelegramChannel implements Channel {
     })
 
     // Message handling
-    this.bot.on('message:text', async (ctx) => {
+    this.bot.on(['message:text', 'message:photo'], async (ctx) => {
       const userId = ctx.from.id.toString()
-      const text = ctx.message.text
+      
+      let text = ''
+      let contentBlocks: ContentBlock[] | null = null
+
+      if (ctx.message.text) {
+          text = ctx.message.text
+      } else if (ctx.message.photo) {
+          const photo = ctx.message.photo.pop() // Get largest
+          if (photo) {
+             try {
+                 logger.info(`Received photo from ${userId}`)
+                 const file = await ctx.api.getFile(photo.file_id)
+                 if (file.file_path) {
+                     const url = `https://api.telegram.org/file/bot${this.token}/${file.file_path}`
+                     const resp = await fetch(url)
+                     const arrayBuffer = await resp.arrayBuffer()
+                     const base64 = Buffer.from(arrayBuffer).toString('base64')
+                     
+                     const caption = ctx.message.caption || ''
+                     text = caption || '[Image Message]'
+                     
+                     contentBlocks = []
+                     if (caption) {
+                         contentBlocks.push({ type: 'text', text: caption })
+                     }
+                     contentBlocks.push({
+                         type: 'image',
+                         data: base64,
+                         mimeType: 'image/jpeg' 
+                     })
+                 }
+             } catch (e) {
+                 logger.error('Failed to download photo', e)
+                 await ctx.reply('❌ Failed to process image.')
+                 return
+             }
+          }
+      }
       const username = ctx.from.username || ctx.from.first_name || 'Unknown'
 
       logger.info(`Received from ${username} (${userId}): ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}`)
@@ -129,7 +167,8 @@ export class TelegramChannel implements Channel {
 
       // Handle message asynchronously
       // Pass this.id ('telegram') as channelId
-      messageHandler(text, userId, this.id, async (replyText) => {
+      const input = contentBlocks ? contentBlocks : text
+      messageHandler(input, userId, this.id, async (replyText) => {
         await this.sendLongMessage(ctx, replyText)
       }).catch((error) => {
         logger.error('Error handling message:', error)
