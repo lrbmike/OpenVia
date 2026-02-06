@@ -21,7 +21,8 @@
     "maxTokens": 4096,
     "maxIterations": 10,
     "temperature": 0.7,
-    "shellConfirmList": ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown", "del", "rmdir"]
+    "shellConfirmList": ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown", "del", "rmdir"],
+    "skillLoading": "eager"
   },
   "logging": {
     "level": "info",

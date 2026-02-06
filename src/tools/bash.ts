@@ -12,7 +12,7 @@ const execAsync = promisify(exec)
 /** 参数 Schema */
 const inputSchema = z.object({
   command: z.string().describe('The shell command to execute'),
-  timeout: z.number().optional().describe('Timeout in milliseconds (default: 30000)')
+  timeout: z.coerce.number().optional().describe('Timeout in milliseconds (default: 30000)')
 })
 
 /** Bash Tool 定义 */

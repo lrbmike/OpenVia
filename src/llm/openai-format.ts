@@ -424,15 +424,35 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       yield { type: 'text_delta', content: event.delta }
     }
     
+    // 捕获函数名称 (response.output_item.added)
+    if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
+      const item = event.item
+      const callId = item.call_id
+      const itemId = item.id
+      if (itemId && callId && item.name) {
+        state.responsesItems.set(itemId, { callId, name: item.name })
+      }
+    }
+    
     // 函数调用完成（方式1：直接事件）
     if (event.type === 'response.function_call_arguments.done') {
-      yield* this.emitFunctionCall(event.call_id || event.id, event.name, event.arguments)
+      const itemId = event.item_id
+      const cached = state.responsesItems.get(itemId) // 使用 item_id 查找
+      
+      const id = cached?.callId || event.call_id || event.id || `call_${Date.now()}`
+      const name = cached?.name || event.name || ''
+      yield* this.emitFunctionCall(id, name, event.arguments)
     }
     
     // 函数调用完成（方式2：通过 output_item）
     if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
       const item = event.item
-      yield* this.emitFunctionCall(item.call_id || item.id, item.name, item.arguments)
+      const itemId = item.id
+      const cached = state.responsesItems.get(itemId)
+      
+      const id = item.call_id || cached?.callId || item.id || `call_${Date.now()}`
+      const name = item.name || cached?.name || ''
+      yield* this.emitFunctionCall(id, name, item.arguments)
     }
     
     // 响应完成，提取 usage
@@ -459,7 +479,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       // 忽略解析错误
     }
     
-    yield { type: 'tool_call', id, name, args }
+    if (name) {
+      yield { type: 'tool_call', id, name, args }
+    } else {
+      yield { type: 'error', message: `Function call missing name (id: ${id})` }
+    }
   }
 
   // ============================================================================
@@ -507,6 +531,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       // 解析 SSE 流
       const state: StreamParserState = {
         pendingToolCalls: new Map(),
+        responsesItems: new Map(),
         usage: undefined
       }
       
@@ -571,5 +596,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
 
 interface StreamParserState {
   pendingToolCalls: Map<number, { id: string; name: string; args: string }>
+  // Map item_id to { call_id, name }
+  responsesItems: Map<string, { callId: string; name: string }>
   usage: TokenUsage | undefined
 }

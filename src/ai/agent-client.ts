@@ -68,20 +68,30 @@ export async function initAgentClient(
     logger.warn(`Skills loading had ${errors.length} errors`)
   }
   if (skills.length > 0) {
-    // 只注入 Skills 列表，让 LLM 按需调用 read_skill 获取完整内容
-    const skillsList = skills.map(s => 
-      `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
-    ).join('\n')
-    
-    const skillsPrompt = `
+    const loadingStrategy = config.llm.skillLoading || 'eager'
+    let skillsPrompt = ''
+
+    if (loadingStrategy === 'eager') {
+      const { formatSkillsForPrompt } = await import('../skills')
+      skillsPrompt = formatSkillsForPrompt(skills)
+      logger.info(`Loaded ${skills.length} user skills (Eager Loading): ${skills.map(s => s.id).join(', ')}`)
+    } else {
+      // Lazy Loading: 只注入 Skills 列表
+      const skillsList = skills.map(s => 
+        `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
+      ).join('\n')
+      
+      skillsPrompt = `
 ## Available Skills
 
 You have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.
 
 ${skillsList}
 `
+      logger.info(`Loaded ${skills.length} user skills (Lazy Loading): ${skills.map(s => s.id).join(', ')}`)
+    }
+
     basePrompt = basePrompt + '\n' + skillsPrompt
-    logger.info(`Loaded ${skills.length} user skills: ${skills.map(s => s.id).join(', ')}`)
   }
   systemPrompt = basePrompt
   
@@ -159,7 +169,6 @@ export async function callAgent(
   
   try {
     let fullResponse = ''
-    let lastTextEvent = ''
     
     // 权限请求处理器 - 使用 PermissionBridge 实现真正的用户等待
     const onPermissionRequest = async (prompt: string): Promise<boolean> => {
@@ -187,7 +196,6 @@ export async function callAgent(
       switch (event.type) {
         case 'text_delta':
           fullResponse += event.content
-          lastTextEvent = event.content
           // 可用于流式输出
           break
           

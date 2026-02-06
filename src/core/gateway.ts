@@ -125,11 +125,15 @@ export class AgentGateway {
             break
             
           case 'tool_call':
-            pendingToolCalls.push({
-              id: event.id,
-              name: event.name,
-              args: event.args
-            })
+            if (event.name) {
+              pendingToolCalls.push({
+                id: event.id,
+                name: event.name,
+                args: event.args
+              })
+            } else {
+              console.warn(`[Gateway] Ignored tool_call with no name (id: ${event.id})`)
+            }
             break
             
           case 'error':

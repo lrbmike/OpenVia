@@ -146,6 +146,7 @@ openvia
 | `systemPrompt`     | 所有对话的系统提示词                                                                                    |
 | `maxIterations`    | 每条消息最大工具调用轮次（默认: 10）                                                                    |
 | `shellConfirmList` | 需要用户确认的命令列表                                                                                  |
+| `skillLoading`     | `lazy` (按需加载) 或 `eager` (预加载) 技能策略 (默认: `eager`)                                          |
 
 ### 支持的 LLM 提供商
 

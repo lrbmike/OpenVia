@@ -151,6 +151,7 @@ openvia
 | `systemPrompt`     | System prompt for all conversations                                                                                             |
 | `maxIterations`    | Max tool call rounds per message (default: 10)                                                                                  |
 | `shellConfirmList` | Commands requiring user confirmation                                                                                            |
+| `skillLoading`     | `lazy` (on-demand) or `eager` (preload) skills strategy (default: `eager`)                                                      |
 
 ### Supported LLM Providers
 

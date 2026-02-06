@@ -50,6 +50,7 @@ export interface AppConfig {
     systemPrompt?: string
     shellConfirmList?: string[]
     maxIterations?: number
+    skillLoading?: 'lazy' | 'eager'
   }
   /** @deprecated Use llm instead */
   claude: {
@@ -99,6 +100,7 @@ export function getDefaultConfig(): AppConfig {
       timeout: 120000,
       maxTokens: 4096,
       shellConfirmList: ['rm', 'mv', 'sudo', 'su', 'dd', 'reboot', 'shutdown', 'mkfs', 'chmod', 'chown', '>', '>>', '&', '|'],
+      skillLoading: 'eager',
     },
     claude: {
       apiKey: '',
