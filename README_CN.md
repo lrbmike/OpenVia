@@ -12,36 +12,30 @@ Web 界面安全地与 AI 进行交互。
 
 ## 核心功能
 
-- **多 LLM 支持**: 支持 OpenAI、Claude、Qwen、DeepSeek、Moonshot 及任何 OpenAI
-  兼容 API。
-- **多渠道接入**: 支持 Telegram、飞书，可扩展的渠道架构。
-- **内置工具**: 文件操作、Shell 执行，可扩展的工具注册表。
-- **Skills 系统**: 用户自定义知识扩展，存放于 `~/.openvia/skills/`。
-- **安全可控**: 用户白名单、Shell 命令确认、细粒度权限请求。
-- **会话管理**: 自动管理对话历史，支持会话持久化。
-- **Bun 驱动**: 基于高性能 Bun 运行时（推荐 v1.2+）。
+- **原生多模型支持**: 原生适配 OpenAI、Claude、Gemini API 格式，无需重型
+  SDK。对于支持多模态的模型，已开启完整的**图片/文本混合输入**支持。
+- **微内核架构**: Headless 设计，执行权与决策权分离，资源占用低。
+- **多渠道接入**: 支持 Telegram、飞书（Lark），可扩展的渠道架构。
+- **策略引擎**: 对所有工具调用进行粒度化的权限控制（允许、拒绝、需确认）。
+- **内置工具**: 完善的文件操作、Shell 执行以及专门的技能管理工具。
+- **Skills 系统**: 用户自定义知识扩展，支持 `eager` (预加载) 或 `lazy`
+  (按需读取) 策略。
+- **会话隔离**: 为多用户提供完全独立的对话历史与执行环境。
+- **Bun 驱动**: 基于超高性能的 Bun 运行时（推荐 v1.2+）。
 
 ---
 
-## 架构
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     OpenVia Gateway                          │
-├─────────────┬─────────────┬─────────────┬──────────────────┤
-│  Telegram   │    飞书     │   (未来)    │   Bot Channels   │
-├─────────────┴─────────────┴─────────────┴──────────────────┤
-│                    Router / Orchestrator                     │
-├─────────────────────────────────────────────────────────────┤
-│                      Agent Gateway                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ LLM Adapter │  │   Policy    │  │   Tool      │         │
-│  │  (OpenAI)   │  │   Engine    │  │  Executor   │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-├─────────────────────────────────────────────────────────────┤
-│  Tools: bash, read_file, write_file, edit_file, ...         │
-│  Skills: ~/.openvia/skills/ (用户自定义知识)                  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    User([用户]) <--> Bot[机器人通道: TG/飞书]
+    Bot <--> Gateway[Agent Gateway 网关]
+    Gateway <--> Adapter[LLM Adapter 适配层: OpenAI/Claude/Gemini]
+    Gateway <--> Policy[Policy Engine 策略引擎]
+    Gateway <--> Registry[Tool Registry 工具注册]
+    Registry --- Executor[Tool Executor 执行器]
+    Executor --- Bash[bash]
+    Executor --- Files[文件读/写/编辑]
+    Executor --- Skills[技能列出/读取]
 ```
 
 ---
@@ -148,15 +142,14 @@ openvia
 | `shellConfirmList` | 需要用户确认的命令列表                                                                                  |
 | `skillLoading`     | `lazy` (按需加载) 或 `eager` (预加载) 技能策略 (默认: `eager`)                                          |
 
-### 支持的 LLM 提供商
-
 | 提供商          | 格式     | baseUrl 示例                                        |
 | --------------- | -------- | --------------------------------------------------- |
 | OpenAI          | `openai` | `https://api.openai.com/v1`                         |
-| Claude          | `openai` | `https://api.anthropic.com/v1`                      |
+| Claude          | `claude` | `https://api.anthropic.com`                         |
+| Gemini          | `gemini` | `https://generativelanguage.googleapis.com`         |
 | Qwen (通义千问) | `openai` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | DeepSeek        | `openai` | `https://api.deepseek.com/v1`                       |
-| Moonshot        | `openai` | `https://api.moonshot.cn/v1`                        |
+| Ollama (本地)   | `openai` | `http://localhost:11434/v1`                         |
 
 ---
 

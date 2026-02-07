@@ -3,7 +3,7 @@
  * OpenVia - Universal CLI Gateway for AI Agents
  *
  * Command Line Entry Point
- * v0.0.1: Initial OpenVia release
+ * v0.1.0: Initial OpenVia release
  */
 
 import { BotManager } from './bot'

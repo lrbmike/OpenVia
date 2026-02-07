@@ -12,41 +12,36 @@ interact with AI agents through mobile or web interfaces securely.
 
 ## Features
 
-- **Multi-LLM Support**: Works with OpenAI, Claude, Qwen, DeepSeek, Moonshot,
-  and any OpenAI-compatible API.
-- **Multi-Channel**: Supports Telegram, Feishu (Lark), with extensible channel
-  architecture.
-- **Built-in Tools**: File operations, shell execution, and extensible tool
-  registry.
-- **Skills System**: User-defined knowledge extensions loaded from
-  `~/.openvia/skills/`.
-- **Secure by Design**: User whitelist, shell command confirmation, and granular
-  permission requests.
-- **Session Management**: Automatic conversation history and session
-  persistence.
-- **Powered by Bun**: Built on high-performance Bun runtime (v1.2+ recommended).
+- **Multi-LLM Native Support**: Works with OpenAI, Claude, Gemini native API
+  formats without heavy SDK dependencies. **Full multimodal support**
+  (images/text).
+- **Micro-kernel Architecture**: Headless, low-resource agent core with clear
+  separation of proposal and execution.
+- **Multi-Channel**: Supports Telegram, Feishu (Lark) with **image/photo**
+  support.
+- **Policy Engine**: Granular permission control (allow, deny, require_approval)
+  for all tool calls.
+- **Built-in Tools**: File operations, shell execution, and specialized skill
+  management.
+- **Skills System**: User-defined knowledge extensions with `eager` or `lazy`
+  loading strategies.
+- **Session Isolation**: Independent conversation history and context for
+  multiple users.
+- **Powered by Bun**: Built on ultra-fast Bun runtime (v1.2+).
 
 ---
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     OpenVia Gateway                          │
-├─────────────┬─────────────┬─────────────┬──────────────────┤
-│  Telegram   │   Feishu    │   (Future)  │   Bot Channels   │
-├─────────────┴─────────────┴─────────────┴──────────────────┤
-│                    Router / Orchestrator                     │
-├─────────────────────────────────────────────────────────────┤
-│                      Agent Gateway                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ LLM Adapter │  │   Policy    │  │   Tool      │         │
-│  │  (OpenAI)   │  │   Engine    │  │  Executor   │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-├─────────────────────────────────────────────────────────────┤
-│  Tools: bash, read_file, write_file, edit_file, ...         │
-│  Skills: ~/.openvia/skills/ (user-defined knowledge)        │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    User([User]) <--> Bot[Bot Channels: TG/Feishu]
+    Bot <--> Gateway[Agent Gateway]
+    Gateway <--> Adapter[LLM Adapter: OpenAI/Claude/Gemini]
+    Gateway <--> Policy[Policy Engine]
+    Gateway <--> Registry[Tool Registry]
+    Registry --- Executor[Tool Executor]
+    Executor --- Bash[bash]
+    Executor --- Files[read/write/edit_file]
+    Executor --- Skills[list/read_skill]
 ```
 
 ---
@@ -153,15 +148,14 @@ openvia
 | `shellConfirmList` | Commands requiring user confirmation                                                                                            |
 | `skillLoading`     | `lazy` (on-demand) or `eager` (preload) skills strategy (default: `eager`)                                                      |
 
-### Supported LLM Providers
-
 | Provider | Format   | Example baseUrl                                     |
 | -------- | -------- | --------------------------------------------------- |
 | OpenAI   | `openai` | `https://api.openai.com/v1`                         |
-| Claude   | `openai` | `https://api.anthropic.com/v1`                      |
+| Claude   | `claude` | `https://api.anthropic.com`                         |
+| Gemini   | `gemini` | `https://generativelanguage.googleapis.com`         |
 | Qwen     | `openai` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 | DeepSeek | `openai` | `https://api.deepseek.com/v1`                       |
-| Moonshot | `openai` | `https://api.moonshot.cn/v1`                        |
+| Ollama   | `openai` | `http://localhost:11434/v1`                         |
 
 ---
 
