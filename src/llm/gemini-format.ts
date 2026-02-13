@@ -89,6 +89,20 @@ function sanitizeParts(parts: GeminiPart[]): Array<Record<string, unknown>> {
   })
 }
 
+function normalizeArgs(args: unknown): Record<string, unknown> {
+  if (!args) return {}
+  if (typeof args === 'string') {
+    try {
+      const parsed = JSON.parse(args)
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>
+    } catch {
+      return { _raw: args }
+    }
+  }
+  if (typeof args === 'object') return args as Record<string, unknown>
+  return { _raw: args }
+}
+
 export class GeminiFormatAdapter implements LLMAdapter {
   readonly name = 'gemini-format'
   readonly model: string
@@ -173,12 +187,26 @@ export class GeminiFormatAdapter implements LLMAdapter {
           .join(', ')}`
       )
 
+      const toolCallParts: GeminiPart[] = toolResults.map(r => ({
+        functionCall: {
+          name: r.toolName!,
+          args: normalizeArgs(r.toolArgs)
+        }
+      }))
+
       const parts: GeminiPart[] = toolResults.map(r => ({
         functionResponse: {
           name: r.toolName!,
           response: { content: r.content }
         }
       }))
+
+      // Gemini expects the corresponding functionCall to appear in the model role
+      // before the functionResponse is provided by the user.
+      geminiContents.push({
+        role: 'model',
+        parts: toolCallParts
+      })
       
       geminiContents.push({
         role: 'user',
