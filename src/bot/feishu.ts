@@ -7,6 +7,27 @@ import type { ContentBlock } from '../types/protocol'
 
 const logger = new Logger('FeishuChannel')
 
+/**
+ * Convert standard Markdown to Lark Markdown (lark_md)
+ * Lark MD supports: **bold**, *italic*, ~~strikethrough~~, [link](url), and code blocks.
+ * It does NOT support headers (#), so we convert them to bold.
+ */
+function formatLarkMarkdown(markdown: string): string {
+    let text = markdown;
+
+    // 1. Headers: # Header -> **Header**
+    text = text.replace(/^(#{1,6})\s+(.*)$/gm, '**$2**');
+
+    // 2. Images: ![alt](url) -> [Image: alt](url)
+    // Lark cards cannot render arbitrary external image URLs inline easily without uploading.
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[Image: $1]($2)');
+
+    // 3. Lists: Ensure newline before list if not present (Lark is picky?)
+    // Actually Lark MD handles lists okay, but sometimes likes \n
+    
+    return text;
+}
+
 export class FeishuChannel implements Channel {
   public id = 'feishu'
   private client: lark.Client
@@ -43,11 +64,6 @@ export class FeishuChannel implements Channel {
         'im.message.receive_v1': async (data) => {
             const messageId = data.message.message_id
             
-            // Debug: Log message structure
-            // logger.debug(`[Feishu] Raw message data keys: ${Object.keys(data.message)}`)
-            // @ts-ignore
-            // logger.debug(`[Feishu] msg_type: ${data.message.msg_type}, message_type: ${data.message.message_type}`)
-
             // Deduplication
             if (this.processedMessages.has(messageId)) {
                 logger.debug(`Duplicate message detected: ${messageId}, skipping.`)
@@ -123,23 +139,53 @@ export class FeishuChannel implements Channel {
             }
             else {
                 logger.warn(`[Feishu] Unsupported message type: ${msgType}`)
-                return
+                return;
             }
             
             logger.info(`Received from ${userId}: ${text}`)
-
 
             logAudit({ userId, action: 'message', result: 'allowed' })
 
             // Helper to reply
             const sendReply = async (replyText: string) => {
-                await this.client.im.message.reply({
-                    path: { message_id: messageId },
-                    data: {
-                        content: JSON.stringify({ text: replyText }),
-                        msg_type: 'text'
+                const mkContent = formatLarkMarkdown(replyText)
+                
+                const card = {
+                    config: { wide_screen_mode: true },
+                    elements: [
+                        {
+                            tag: 'div',
+                            text: {
+                                tag: 'lark_md',
+                                content: mkContent
+                            }
+                        }
+                    ]
+                }
+
+                try {
+                    await this.client.im.message.reply({
+                        path: { message_id: messageId },
+                        data: {
+                            content: JSON.stringify(card),
+                            msg_type: 'interactive'
+                        }
+                    })
+                } catch (e) {
+                    logger.error('Failed to send interactive card, falling back to text', e)
+                    // Fallback to plain text
+                    try {
+                        await this.client.im.message.reply({
+                            path: { message_id: messageId },
+                            data: {
+                                content: JSON.stringify({ text: replyText }),
+                                msg_type: 'text'
+                            }
+                        })
+                    } catch (e2) {
+                        logger.error('Failed to send fallback text message', e2)
                     }
-                })
+                }
             }
 
             // 1. Intercept Permission Approvals
