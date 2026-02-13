@@ -1,14 +1,14 @@
-/**
- * Agent Gateway - 编排层
+﻿/**
+ * Agent Gateway - Orchestration Layer
  * 
- * 负责：
- * - 接收外部消息（来自 Bot）
- * - 维护 session 上下文
- * - 协调 LLM、Policy、Executor
+ * Responsibilities:
+ * - Receive external messages (from Bot)
+ * - Maintain session context
+ * - Coordinate LLM, Policy, Executor
  * 
- * 不做的事：
- * - 不执行工具（交给 Executor）
- * - 不做权限判断（交给 Policy）
+ * Does NOT:
+ * - Execute tools (delegated to Executor)
+ * - Make permission decisions (delegated to Policy)
  */
 
 
@@ -21,10 +21,10 @@ import { Logger } from '../utils/logger'
 const logger = new Logger('Gateway')
 
 // ============================================================================
-// 类型定义
+// Type Definitions
 // ============================================================================
 
-/** Agent 事件流 */
+/** Agent event stream */
 export type AgentEvent =
   | { type: 'text_delta'; content: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
@@ -33,10 +33,10 @@ export type AgentEvent =
   | { type: 'done'; fullResponse: string }
   | { type: 'error'; message: string }
 
-/** Agent 输入 */
+/** Agent input */
 import type { Message, ContentBlock } from '../types'
 
-/** Agent 输入 */
+/** Agent input */
 export interface AgentInput {
   message: string | ContentBlock[]
   history?: Message[]
@@ -45,13 +45,13 @@ export interface AgentInput {
   onPermissionRequest?: (prompt: string) => Promise<boolean>
 }
 
-/** Agent 配置 */
+/** Agent configuration */
 export interface AgentGatewayConfig {
-  maxIterations?: number  // 最大工具调用轮次
+  maxIterations?: number  // Max tool call iterations
 }
 
 // ============================================================================
-// Agent Gateway 实现
+// Agent Gateway Implementation
 // ============================================================================
 
 export class AgentGateway {
@@ -77,99 +77,117 @@ export class AgentGateway {
   }
   
   /**
-   * 处理用户消息
+   * Handle user message
    */
   async *handleMessage(input: AgentInput): AsyncGenerator<AgentEvent> {
     const { message, history, session, systemPrompt, onPermissionRequest } = input
     
-    // 构建执行上下文
+    // Build execution context
     const execContext: ExecutionContext = {
       userId: session.userId,
       chatId: session.chatId,
       workDir: process.cwd()
     }
     
-    // 获取工具 schemas
+    // Get tool schemas
     const tools = this.registry.getSchemas()
     
-    // 消息历史（优先使用上层传入的会话历史）
+    // Message history (prefer upstream conversation history)
     const messages: Message[] = history && history.length > 0
       ? [...history]
       : [{ role: 'user', content: message }]
     
-    // 完整响应
+    // Full response accumulator
     let fullResponse = ''
     
-    // 上一轮工具调用结果（跨迭代保存）
+    // Previous round tool results (persisted across iterations)
     let lastToolResults: LLMToolResult[] = []
+    let previousResponseId: string | undefined
     
-    // 迭代处理（支持多轮工具调用）
+    // Iterative processing (supports multi-round tool calls)
     for (let iteration = 0; iteration < this.config.maxIterations!; iteration++) {
       const remaining = this.config.maxIterations! - iteration - 1
       logger.info(`[Gateway] Iteration ${iteration + 1}/${this.config.maxIterations} (${remaining} remaining)`)
       logger.info(`[Gateway] Calling LLM with ${messages.length} messages...`)
       
-      // 收集当前轮的工具调用
-      const pendingToolCalls: Array<{ id: string; name: string; args: unknown }> = []
+      // Collect current round tool calls
+      const pendingToolCalls: Array<{ id: string; name: string; args: unknown; meta?: Record<string, unknown> }> = []
       let hasText = false
       void hasText // Mark as used to suppress warning
       
-      // 调用 LLM，传入上一轮的工具结果
+      // Call LLM, pass in previous round tool results
       const toolResults = lastToolResults.length > 0 ? lastToolResults : undefined
       
-      for await (const event of this.llm.chat({
-        messages,
-        tools,
-        toolResults,
-        systemPrompt
-      })) {
-        switch (event.type) {
-          case 'text_delta':
-            fullResponse += event.content
-            hasText = true
-            yield { type: 'text_delta', content: event.content }
-            break
-            
-          case 'tool_call':
-            if (event.name) {
-              pendingToolCalls.push({
-                id: event.id,
-                name: event.name,
-                args: event.args
-              })
-            } else {
-              logger.warn(`[Gateway] Ignored tool_call with no name (id: ${event.id})`)
-            }
-            break
-            
-          case 'error':
-            yield { type: 'error', message: event.message }
-            return
-            
-          case 'done':
-            // 如果没有工具调用，返回结果
-            if (pendingToolCalls.length === 0) {
-              yield { type: 'done', fullResponse }
+      try {
+        for await (const event of this.llm.chat({
+          messages,
+          tools,
+          toolResults,
+          systemPrompt,
+          previousResponseId
+        })) {
+          switch (event.type) {
+            case 'text_delta':
+              fullResponse += event.content
+              hasText = true
+              yield { type: 'text_delta', content: event.content }
+              break
+              
+            case 'tool_call':
+              if (event.name) {
+                pendingToolCalls.push({
+                  id: event.id,
+                  name: event.name,
+                  args: event.args,
+                  meta: event.meta
+                })
+              } else {
+                logger.warn(`[Gateway] Ignored tool_call with no name (id: ${event.id})`)
+              }
+              break
+              
+            case 'error':
+              yield { type: 'error', message: event.message }
               return
-            }
-            break
+              
+            case 'done':
+              if (event.responseId) {
+                previousResponseId = event.responseId
+              }
+              // If no tool calls, return result
+              if (pendingToolCalls.length === 0) {
+                yield { type: 'done', fullResponse }
+                return
+              }
+              break
+          }
         }
+      } catch (error) {
+        const err = error as Error
+        logger.error(
+          `[Gateway] LLM call failed: ${err?.name || 'Error'} ${err?.message || String(error)}`
+        )
+        if (err?.stack) {
+          logger.error(`[Gateway] LLM call stack: ${err.stack}`)
+        }
+        yield { type: 'error', message: err?.message || String(error) }
+        return
       }
       
-      // 处理工具调用
+      // Process tool calls
       if (pendingToolCalls.length === 0) {
         logger.info(`[Gateway] No tool calls, returning fullResponse (${fullResponse.length} chars): ${fullResponse.slice(0, 100)}...`)
         yield { type: 'done', fullResponse }
         return
       }
       
-      // 收集工具结果
+      // Collect tool results
       const toolResultsForNextRound: LLMToolResult[] = []
       
       for (const tc of pendingToolCalls) {
         yield { type: 'tool_start', id: tc.id, name: tc.name, args: tc.args }
         
-        // 获取工具定义
+        // Get tool definition
         const toolDef = this.registry.get(tc.name)
         if (!toolDef) {
           const result: ToolResult = { success: false, error: `Tool not found: ${tc.name}` }
@@ -178,20 +196,21 @@ export class AgentGateway {
             toolCallId: tc.id,
             toolName: tc.name,
             toolArgs: tc.args,
+            toolCallMeta: tc.meta,
             content: JSON.stringify(result),
             isError: true
           })
           continue
         }
         
-        // 评估策略
+        // Evaluate policy
         const decision = await this.policy.evaluate({
           tool: toolDef,
           args: tc.args,
           session
         })
         
-        // 记录审计
+        // Log audit
         this.policy.logAudit({
           userId: session.userId,
           chatId: session.chatId,
@@ -200,7 +219,7 @@ export class AgentGateway {
           decision
         })
         
-        // 根据决策处理
+        // Process based on decision
         let result: ToolResult
         
         if (decision.type === 'deny') {
@@ -210,7 +229,7 @@ export class AgentGateway {
         } else if (decision.type === 'require_approval') {
           yield { type: 'tool_pending', id: tc.id, name: tc.name, args: tc.args, prompt: decision.prompt }
           
-          // 等待用户批准
+          // Wait for user approval
           let approved = false
           if (onPermissionRequest) {
             approved = await onPermissionRequest(decision.prompt)
@@ -241,16 +260,17 @@ export class AgentGateway {
           toolCallId: tc.id,
           toolName: tc.name,
           toolArgs: tc.args,
+          toolCallMeta: tc.meta,
           content: JSON.stringify(result),
           isError: !result.success
         })
       }
       
-      // 保存到下一轮
+      // Save for next round
       lastToolResults = toolResultsForNextRound
     }
     
-    // 超过最大迭代次数
+    // Max iterations exceeded
     logger.warn(`[Gateway] Max iterations (${this.config.maxIterations}) reached, stopping`)
     yield { type: 'error', message: `Max iterations (${this.config.maxIterations}) reached. Task may be incomplete.` }
   }

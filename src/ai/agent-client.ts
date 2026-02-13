@@ -250,7 +250,14 @@ export async function callAgent(
     return { action: 'reply', message: fullResponse }
     
   } catch (error) {
-    logger.error('Agent call failed:', error)
+    if (error instanceof Error) {
+      logger.error(`Agent call failed: ${error.name} ${error.message}`)
+      if (error.stack) {
+        logger.error(`Agent call stack: ${error.stack}`)
+      }
+    } else {
+      logger.error('Agent call failed:', error)
+    }
     return {
       action: 'error',
       message: error instanceof Error ? error.message : String(error)

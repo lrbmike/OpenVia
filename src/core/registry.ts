@@ -118,8 +118,6 @@ export class ToolRegistry {
    * 灏?Zod schema 杞崲涓?JSON Schema锛堢畝鍖栫増锛?
    */
   private zodToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
-    // 浣跨敤 Zod 鐨勫唴缃柟娉曡幏鍙?shape锛堝鏋滄湁锛?
-    // 杩欓噷鏄竴涓畝鍖栧疄鐜帮紝瀹為檯鍙娇鐢?zod-to-json-schema 搴?
     const def = (schema as z.ZodObject<z.ZodRawShape>)._def
     
     if (def && 'shape' in def && typeof def.shape === 'function') {
@@ -128,26 +126,52 @@ export class ToolRegistry {
       const required: string[] = []
       
       for (const [key, value] of Object.entries(shape)) {
-        const fieldDef = (value as z.ZodTypeAny)._def
+        const unwrap = (v: z.ZodTypeAny): { base: z.ZodTypeAny; optional: boolean } => {
+          let current = v
+          let optional = false
+          while (true) {
+            const currentDef = current._def
+            if (currentDef.typeName === 'ZodOptional' || currentDef.typeName === 'ZodDefault') {
+              optional = true
+              current = currentDef.innerType
+              continue
+            }
+            if (currentDef.typeName === 'ZodNullable') {
+              optional = true
+              current = currentDef.innerType
+              continue
+            }
+            if (currentDef.typeName === 'ZodEffects') {
+              current = currentDef.schema
+              continue
+            }
+            return { base: current, optional }
+          }
+        }
+
+        const { base, optional } = unwrap(value as z.ZodTypeAny)
+        const fieldDef = base._def
         let type = 'string'
         let description = ''
-        
-        // 鑾峰彇鎻忚堪
+
         if (fieldDef.description) {
           description = fieldDef.description
         }
-        
-        // 鍒ゆ柇绫诲瀷
+
         if (fieldDef.typeName === 'ZodString') type = 'string'
         else if (fieldDef.typeName === 'ZodNumber') type = 'number'
         else if (fieldDef.typeName === 'ZodBoolean') type = 'boolean'
         else if (fieldDef.typeName === 'ZodArray') type = 'array'
         else if (fieldDef.typeName === 'ZodObject') type = 'object'
+        else if (fieldDef.typeName === 'ZodEnum') type = 'string'
+        else if (fieldDef.typeName === 'ZodLiteral') {
+          const literalValue = fieldDef.value
+          type = typeof literalValue
+        }
         
         properties[key] = { type, description }
         
-        // 妫€鏌ユ槸鍚﹀彲閫?
-        if (fieldDef.typeName !== 'ZodOptional' && !fieldDef.isOptional?.()) {
+        if (!optional && fieldDef.typeName !== 'ZodOptional' && !fieldDef.isOptional?.()) {
           required.push(key)
         }
       }

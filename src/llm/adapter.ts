@@ -24,9 +24,9 @@ export interface TokenUsage {
 /** LLM event stream */
 export type LLMEvent =
   | { type: 'text_delta'; content: string }
-  | { type: 'tool_call'; id: string; name: string; args: unknown }
+  | { type: 'tool_call'; id: string; name: string; args: unknown; meta?: Record<string, unknown> }
   | { type: 'tool_call_delta'; id: string; name?: string; argsFragment?: string }
-  | { type: 'done'; usage?: TokenUsage }
+  | { type: 'done'; usage?: TokenUsage; responseId?: string }
   | { type: 'error'; message: string }
 
 /** Tool schema (shared JSON Schema) */
@@ -41,6 +41,7 @@ export interface ToolResult {
   toolCallId: string
   toolName?: string
   toolArgs?: unknown
+  toolCallMeta?: Record<string, unknown>
   content: string
   isError?: boolean
 }
@@ -68,6 +69,7 @@ export interface LLMAdapter {
     tools?: ToolSchema[]
     toolResults?: ToolResult[]
     systemPrompt?: string
+    previousResponseId?: string
   }): AsyncGenerator<LLMEvent>
   
   /** Adapter name */

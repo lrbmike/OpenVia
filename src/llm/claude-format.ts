@@ -91,6 +91,7 @@ export class ClaudeFormatAdapter implements LLMAdapter {
     tools?: ToolSchema[]
     toolResults?: ToolResult[]
     systemPrompt?: string
+    previousResponseId?: string
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
     

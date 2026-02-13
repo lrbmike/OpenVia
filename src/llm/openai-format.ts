@@ -181,6 +181,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     tools?: ToolSchema[]
     toolResults?: ToolResult[]
     systemPrompt?: string
+    previousResponseId?: string
   }): AsyncGenerator<LLMEvent> {
     const url = this.config.baseUrl.replace(/\/$/, '')
     const useResponses = url.endsWith('/responses')
@@ -206,6 +207,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     tools?: ToolSchema[]
     toolResults?: ToolResult[]
     systemPrompt?: string
+    previousResponseId?: string
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
     
@@ -377,8 +379,9 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     tools?: ToolSchema[]
     toolResults?: ToolResult[]
     systemPrompt?: string
+    previousResponseId?: string
   }): AsyncGenerator<LLMEvent> {
-    const { messages, tools, toolResults, systemPrompt } = input
+    const { messages, tools, toolResults, systemPrompt, previousResponseId } = input
     
     // NOTE: documentation updated to English.
     const inputItems: ResponsesInput[] = []
@@ -437,6 +440,9 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       model: this.model,
       input: inputItems,
       stream: true
+    }
+    if (previousResponseId) {
+      body.previous_response_id = previousResponseId
     }
     
     if (responsesTools && responsesTools.length > 0) {
@@ -572,12 +578,17 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     }
     
     // NOTE: documentation updated to English.
-    if (event.type === 'response.completed' && event.response?.usage) {
-      const u = event.response.usage
-      state.usage = {
-        promptTokens: u.input_tokens || 0,
-        completionTokens: u.output_tokens || 0,
-        totalTokens: (u.input_tokens || 0) + (u.output_tokens || 0)
+    if (event.type === 'response.completed') {
+      if (event.response?.id) {
+        state.responseId = event.response.id
+      }
+      if (event.response?.usage) {
+        const u = event.response.usage
+        state.usage = {
+          promptTokens: u.input_tokens || 0,
+          completionTokens: u.output_tokens || 0,
+          totalTokens: (u.input_tokens || 0) + (u.output_tokens || 0)
+        }
       }
     }
   }
@@ -657,7 +668,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
       
       yield* this.parseSSEStream(response.body, parseEvent, state)
-      yield { type: 'done', usage: state.usage }
+      yield { type: 'done', usage: state.usage, responseId: state.responseId }
       
     } catch (error) {
       clearTimeout(timeoutId)
@@ -737,6 +748,7 @@ interface StreamParserState {
   // Track emitted call IDs to prevent duplicates
   emittedCallIds: Set<string>
   usage: TokenUsage | undefined
+  responseId?: string
 }
 
 
