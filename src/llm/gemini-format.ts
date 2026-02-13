@@ -61,6 +61,34 @@ interface GeminiStreamChunk {
 // NOTE: documentation updated to English.
 // ============================================================================
 
+function truncate(text: string, max = 200): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}...`
+}
+
+function sanitizeParts(parts: GeminiPart[]): Array<Record<string, unknown>> {
+  return parts.map((part) => {
+    if ('text' in part) {
+      return { text: truncate(part.text, 300) }
+    }
+    if ('inlineData' in part) {
+      return { inlineData: { mimeType: part.inlineData.mimeType, data: '[base64]' } }
+    }
+    if ('functionCall' in part) {
+      return { functionCall: { name: part.functionCall.name, args: part.functionCall.args } }
+    }
+    if ('functionResponse' in part) {
+      return {
+        functionResponse: {
+          name: part.functionResponse.name,
+          response: { content: truncate(part.functionResponse.response.content, 500) }
+        }
+      }
+    }
+    return { unknownPart: true }
+  })
+}
+
 export class GeminiFormatAdapter implements LLMAdapter {
   readonly name = 'gemini-format'
   readonly model: string
@@ -198,6 +226,23 @@ export class GeminiFormatAdapter implements LLMAdapter {
       logger.debug(
         `[gemini] POST ${safeUrl} (model=${this.model}, contents=${geminiContents.length}, tools=${functionDeclarations?.length || 0})`
       )
+      const sanitizedBody: Record<string, unknown> = {
+        contents: geminiContents.map((c) => ({
+          role: c.role,
+          parts: sanitizeParts(c.parts)
+        })),
+        generationConfig: body.generationConfig,
+        systemInstruction: systemPrompt ? { parts: [{ text: truncate(systemPrompt, 500) }] } : undefined,
+        tools: functionDeclarations && functionDeclarations.length > 0
+          ? [{ functionDeclarations: functionDeclarations.map(fd => ({
+            name: fd.name,
+            description: fd.description,
+            parameters: fd.parameters
+          })) }]
+          : undefined
+      }
+      const bodyPreview = JSON.stringify(sanitizedBody).slice(0, 2000)
+      logger.debug(`[gemini] request body (sanitized, truncated): ${bodyPreview}`)
       const response = await fetch(url, {
         method: 'POST',
         headers: {
