@@ -125,9 +125,16 @@ export class GeminiFormatAdapter implements LLMAdapter {
     
     // NOTE: documentation updated to English.
     if (toolResults && toolResults.length > 0) {
+      for (const r of toolResults) {
+        if (!r.toolName) {
+          yield { type: 'error', message: 'Gemini tool result missing toolName for functionResponse.' }
+          return
+        }
+      }
+
       const parts: GeminiPart[] = toolResults.map(r => ({
         functionResponse: {
-          name: r.toolCallId, // Gemini uses name instead of id for tool responses.
+          name: r.toolName!,
           response: { content: r.content }
         }
       }))

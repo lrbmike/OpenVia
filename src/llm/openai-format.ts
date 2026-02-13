@@ -453,8 +453,24 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     )
 
     
-    // NOTE: documentation updated to English.
-    yield* this.streamRequest(url, body, this.parseResponsesEvent.bind(this))
+    const shouldFallback = (message: string): boolean => {
+      if (!toolResults || toolResults.length === 0) return false
+      return message.includes('upstream_error') || message.includes('API error 400')
+    }
+
+    let emitted = false
+    for await (const event of this.streamRequest(url, body, this.parseResponsesEvent.bind(this))) {
+      if (event.type === 'text_delta' || event.type === 'tool_call' || event.type === 'tool_call_delta') {
+        emitted = true
+      }
+      if (event.type === 'error' && !emitted && shouldFallback(event.message)) {
+        const fallbackBaseUrl = url.replace(/\/responses$/, '')
+        logger.warn(`Responses API failed before output, falling back to chat.completions: ${event.message}`)
+        yield* this.chatWithCompletions(fallbackBaseUrl, input)
+        return
+      }
+      yield event
+    }
   }
   
   /**
