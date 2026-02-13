@@ -1,6 +1,10 @@
-/**
+﻿/**
  * Permission Control
  */
+
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('Policy')
 
 /** Audit Log Entry */
 interface AuditEntry {
@@ -19,43 +23,67 @@ const auditLog: AuditEntry[] = []
 /** Maximum number of audit log entries */
 const MAX_AUDIT_ENTRIES = 1000
 
-/** Allowed user IDs cache */
-let allowedUsersInternal: string[] = []
+/** Allowed user IDs cache (by channel) */
+let allowedUsersByChannelInternal: Record<string, string[]> = {}
+
+/** Log once per channel to avoid flooding */
+const noWhitelistWarnedChannels = new Set<string>()
+
+interface PolicyChannelConfig {
+  telegram?: Array<number | string>
+  feishu?: Array<number | string>
+}
+
+function normalizeAllowedIds(ids?: Array<number | string>): string[] {
+  if (!ids || ids.length === 0) return []
+  return ids
+    .map((id) => String(id).trim())
+    .filter((id) => id.length > 0)
+}
 
 /**
  * Initialize Policy Module
  */
-export function initPolicy(allowedIds: number[]): void {
-  allowedUsersInternal = allowedIds.map(String)
+export function initPolicy(allowedIds: PolicyChannelConfig | number[]): void {
+  noWhitelistWarnedChannels.clear()
+
+  // Backward compatibility: old single-list init means telegram whitelist
+  if (Array.isArray(allowedIds)) {
+    allowedUsersByChannelInternal = {
+      telegram: normalizeAllowedIds(allowedIds)
+    }
+    return
+  }
+
+  allowedUsersByChannelInternal = {
+    telegram: normalizeAllowedIds(allowedIds.telegram),
+    feishu: normalizeAllowedIds(allowedIds.feishu)
+  }
 }
 
 /**
  * Get allowed users list
  */
-export function getAllowedUsers(): string[] {
-  // 1. Priority: Internal cache (from config.json)
-  if (allowedUsersInternal.length > 0) {
-    return allowedUsersInternal
-  }
-
-  // 2. Fallback: Environment variable
-  const users = process.env.ALLOWED_USER_IDS || ''
-  return users.split(',').map((id) => id.trim()).filter((id) => id.length > 0)
+export function getAllowedUsers(channelId = 'telegram'): string[] {
+  return allowedUsersByChannelInternal[channelId] || []
 }
 
 /**
  * Check if user is allowed
  */
-export function isUserAllowed(userId: string): boolean {
-  const allowedUsers = getAllowedUsers()
+export function isUserAllowed(userId: string, channelId = 'telegram'): boolean {
+  const allowedUsers = getAllowedUsers(channelId)
 
   // If no whitelist is configured, allow all users (Development mode)
   if (allowedUsers.length === 0) {
-    console.warn('[Policy] No ALLOWED_USER_IDS configured, allowing all users')
+    if (!noWhitelistWarnedChannels.has(channelId)) {
+      noWhitelistWarnedChannels.add(channelId)
+      logger.warn(`[Policy] No whitelist configured for channel "${channelId}", allowing all users`)
+    }
     return true
   }
 
-  return allowedUsers.includes(userId)
+  return allowedUsers.includes(String(userId).trim())
 }
 
 /**
@@ -84,8 +112,8 @@ export function logAudit(entry: Omit<AuditEntry, 'timestamp'>): void {
   }
 
   // Console output
-  const status = entry.result === 'allowed' ? '✓' : '✗'
-  console.log(
+  const status = entry.result === 'allowed' ? 'ALLOW' : 'DENY'
+  logger.info(
     `[Audit] ${status} User:${entry.userId} Action:${entry.action}${entry.skill ? ` Skill:${entry.skill}` : ''}${
       entry.reason ? ` (${entry.reason})` : ''
     }`
@@ -98,3 +126,4 @@ export function logAudit(entry: Omit<AuditEntry, 'timestamp'>): void {
 export function getAuditLog(limit = 100): AuditEntry[] {
   return auditLog.slice(-limit)
 }
+

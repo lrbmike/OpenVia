@@ -95,14 +95,14 @@ export class TelegramChannel implements Channel {
       
       if (action === 'allow') {
           bridge.resolveRequest(id, 'allow')
-          await ctx.answerCallbackQuery({ text: 'Allowed ✅' })
+          await ctx.answerCallbackQuery({ text: 'Allowed' })
           
           const originalText = ctx.callbackQuery.message?.text || ''
           const htmlText = formatMarkdownToHtml(originalText)
           await ctx.editMessageText(`${htmlText}\n\n<b>(Allowed by ${escapeHtml(ctx.from.first_name)})</b>`, { parse_mode: 'HTML' })
       } else {
           bridge.resolveRequest(id, 'deny')
-          await ctx.answerCallbackQuery({ text: 'Denied ❌' })
+          await ctx.answerCallbackQuery({ text: 'Denied' })
           
           const originalText = ctx.callbackQuery.message?.text || ''
           const htmlText = formatMarkdownToHtml(originalText)
@@ -128,13 +128,13 @@ export class TelegramChannel implements Channel {
     // Command handlers
     this.bot.command('start', async (ctx) => {
       await ctx.reply(
-        `👋 Welcome to OpenVia!\n\nSend /help to see how to use me.`
+        `Welcome to OpenVia!\n\nSend /help to see how to use me.`
       )
     })
     
     this.bot.command('help', async (ctx) => {
       await ctx.reply(
-        `📖 Help
+        `Help
         
   Send me a message in natural language, and I'll understand and execute!
   For example:
@@ -157,7 +157,7 @@ export class TelegramChannel implements Channel {
       const session = getSession(userId, chatId)
       session.history = []
       
-      await ctx.reply('✅ Conversation history cleared')
+      await ctx.reply('Conversation history cleared')
     })
 
     // Message handling
@@ -196,7 +196,7 @@ export class TelegramChannel implements Channel {
                  }
              } catch (e) {
                  logger.error('Failed to download photo', e)
-                 await ctx.reply('❌ Failed to process image.')
+                 await ctx.reply('Failed to process image.')
                  return
              }
           }
@@ -205,8 +205,8 @@ export class TelegramChannel implements Channel {
 
       logger.info(`Received from ${username} (${userId}): ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}`)
 
-      if (!isUserAllowed(userId)) {
-        await ctx.reply("⛔ Sorry, you don't have permission to use this Bot.")
+      if (!isUserAllowed(userId, this.id)) {
+        await ctx.reply("Sorry, you don't have permission to use this Bot.")
         logger.warn(`Unauthorized access attempt from ${userId}`)
         return
       }
@@ -224,7 +224,7 @@ export class TelegramChannel implements Channel {
         await this.sendLongMessage(ctx, replyText)
       }).catch((error) => {
         logger.error('Error handling message:', error)
-        ctx.reply('❌ An error occurred while processing your request. Please try again later.').catch(e => logger.error('Failed to send error reply', e))
+        ctx.reply('An error occurred while processing your request. Please try again later.').catch(e => logger.error('Failed to send error reply', e))
       })
     })
 
@@ -258,8 +258,8 @@ export class TelegramChannel implements Channel {
       const userId = req.context.userId
       
       const keyboard = new InlineKeyboard()
-          .text('✅ Allow', `perm:allow:${req.id}`)
-          .text('❌ Deny', `perm:deny:${req.id}`)
+          .text('Allow', `perm:allow:${req.id}`)
+          .text('Deny', `perm:deny:${req.id}`)
 
       try {
           const htmlMessage = formatMarkdownToHtml(req.message)

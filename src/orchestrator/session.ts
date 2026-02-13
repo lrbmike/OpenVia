@@ -1,8 +1,11 @@
-/**
+﻿/**
  * Session Management
  */
 
 import type { Message } from '../types'
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('Session')
 
 /** Session Data */
 interface Session {
@@ -85,10 +88,11 @@ export function cleanupExpiredSessions(): void {
   for (const [key, session] of sessions.entries()) {
     if (now - session.lastActivity > SESSION_TIMEOUT) {
       sessions.delete(key)
-      console.log(`[Session] Cleaned up expired session: ${key}`)
+      logger.info(`[Session] Cleaned up expired session: ${key}`)
     }
   }
 }
 
 // Periodically clean up expired sessions (every 5 minutes)
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000)
+

@@ -1,19 +1,22 @@
-/**
- * Read Tool - 读取文件内容
+﻿/**
+ * Read Tool - read file contents
  */
 
 import { z } from 'zod'
 import { readFile, stat } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import type { ToolDefinition, ToolResult, ExecutionContext } from '../core/registry'
+import { Logger } from '../utils/logger'
 
-/** 参数 Schema */
+const logger = new Logger('Tool:Read')
+
+/** Input schema */
 const inputSchema = z.object({
   path: z.string().describe('The file path to read'),
   encoding: z.enum(['utf8', 'base64']).optional().describe('File encoding (default: utf8)')
 })
 
-/** Read Tool 定义 */
+/** Read tool definition */
 export const readTool: ToolDefinition = {
   name: 'read_file',
   description: 'Read the contents of a file. Returns the file content as a string.',
@@ -28,26 +31,26 @@ export const readTool: ToolDefinition = {
     
     const { path: filePath, encoding = 'utf8' } = parsed.data
     
-    // 解析路径
+    // Resolve path.
     const absolutePath = isAbsolute(filePath) ? filePath : join(ctx.workDir, filePath)
     
     try {
-      // 检查文件是否存在
+      // Check file exists.
       const stats = await stat(absolutePath)
       
       if (!stats.isFile()) {
         return { success: false, error: `Not a file: ${absolutePath}` }
       }
       
-      // 限制文件大小（10MB）
+      // Enforce max file size (10MB).
       if (stats.size > 10 * 1024 * 1024) {
         return { success: false, error: `File too large (${stats.size} bytes). Max: 10MB` }
       }
       
-      // 读取文件
+      // Read file.
       const content = await readFile(absolutePath, encoding as BufferEncoding)
       
-      console.log(`[Read] Read file: ${absolutePath} (${stats.size} bytes)`)
+      logger.info(`[Read] Read file: ${absolutePath} (${stats.size} bytes)`)
       
       return {
         success: true,
@@ -65,3 +68,5 @@ export const readTool: ToolDefinition = {
     }
   }
 }
+
+

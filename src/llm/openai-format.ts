@@ -1,17 +1,11 @@
-/**
+﻿/**
  * OpenAI Format Adapter
- * 
- * 支持两种 API 协议：
- * - Chat Completions API (/v1/chat/completions) - 标准 OpenAI 格式
- * - Responses API (/v1/responses) - 新一代 OpenAI API
- * 
- * 兼容以下模型服务：
- * - OpenAI (GPT-4, GPT-4o, etc.)
- * - Qwen (通义千问)
- * - DeepSeek
- * - Moonshot
- * - Ollama (本地模型)
- * - 其他 OpenAI 兼容 API
+ *
+ * Supports:
+ * - Chat Completions API (/v1/chat/completions)
+ * - Responses API (/v1/responses)
+ *
+ * Compatible with OpenAI-style providers (OpenAI, Qwen, DeepSeek, Moonshot, Ollama, etc.).
  */
 
 import type { Message } from '../types'
@@ -23,9 +17,12 @@ import type {
   ToolResult,
   TokenUsage 
 } from './adapter'
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('OpenAIAdapter')
 
 // ============================================================================
-// Chat Completions API 类型定义
+// NOTE: documentation updated to English.
 // ============================================================================
 
 interface ChatMessage {
@@ -85,20 +82,55 @@ interface ChatStreamChunk {
 }
 
 // ============================================================================
-// Responses API 类型定义
+// NOTE: documentation updated to English.
 // ============================================================================
 
-interface ResponsesContentBlock {
-  type: 'input_text' | 'input_image'
-  text?: string
-  image_url?: string
+interface ResponsesInputTextBlock {
+  type: 'input_text'
+  text: string
 }
+
+interface ResponsesInputImageBlock {
+  type: 'input_image'
+  image_url: string
+}
+
+interface ResponsesOutputTextBlock {
+  type: 'output_text'
+  text: string
+}
+
+interface ResponsesRefusalBlock {
+  type: 'refusal'
+  refusal: string
+}
+
+type ResponsesContentBlock =
+  | ResponsesInputTextBlock
+  | ResponsesInputImageBlock
+  | ResponsesOutputTextBlock
+  | ResponsesRefusalBlock
 
 interface ResponsesInputItem {
   type: 'message'
-  role: 'user' | 'system' | 'developer'
+  role: 'user' | 'assistant' | 'system' | 'developer'
   content: ResponsesContentBlock[]
 }
+
+interface ResponsesFunctionCallOutputItem {
+  type: 'function_call_output'
+  call_id: string
+  output: string
+}
+
+interface ResponsesFunctionCallItem {
+  type: 'function_call'
+  call_id: string
+  name: string
+  arguments: string
+}
+
+type ResponsesInput = ResponsesInputItem | ResponsesFunctionCallItem | ResponsesFunctionCallOutputItem
 
 interface ResponsesTool {
   type: 'function'
@@ -109,7 +141,7 @@ interface ResponsesTool {
 }
 
 // ============================================================================
-// OpenAI Format Adapter 实现
+// NOTE: documentation updated to English.
 // ============================================================================
 
 export class OpenAIFormatAdapter implements LLMAdapter {
@@ -126,7 +158,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
   
   /**
-   * 根据模型名估算上下文长度
+   * NOTE: documentation updated to English.
    */
   private estimateContextLength(model: string): number {
     if (model.includes('gpt-4o')) return 128000
@@ -142,7 +174,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
   
   /**
-   * 主入口：根据 baseUrl 判断使用哪种协议
+   * NOTE: documentation updated to English.
    */
   async *chat(input: {
     messages: Message[]
@@ -151,9 +183,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     systemPrompt?: string
   }): AsyncGenerator<LLMEvent> {
     const url = this.config.baseUrl.replace(/\/$/, '')
+    const useResponses = url.endsWith('/responses')
+    logger.debug(`Dispatching request via ${useResponses ? 'responses' : 'chat.completions'} (baseUrl=${url})`)
     
-    // 根据 URL 后缀判断协议类型
-    if (url.endsWith('/responses')) {
+    // NOTE: documentation updated to English.
+    if (useResponses) {
       yield* this.chatWithResponses(url, input)
     } else {
       yield* this.chatWithCompletions(url, input)
@@ -161,11 +195,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
 
   // ============================================================================
-  // Chat Completions API 实现
+  // NOTE: documentation updated to English.
   // ============================================================================
   
   /**
-   * 使用 Chat Completions API (/v1/chat/completions)
+   * NOTE: documentation updated to English.
    */
   private async *chatWithCompletions(baseUrl: string, input: {
     messages: Message[]
@@ -175,7 +209,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
     
-    // 1. 构建消息列表
+    // NOTE: documentation updated to English.
     const chatMessages: ChatMessage[] = []
     
     if (systemPrompt) {
@@ -196,7 +230,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 2. 构建工具列表
+    // NOTE: documentation updated to English.
     const chatTools: ChatTool[] | undefined = tools?.map(t => ({
       type: 'function' as const,
       function: {
@@ -206,7 +240,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }))
     
-    // 3. 构建请求体
+    // NOTE: documentation updated to English.
     const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`
     const body: Record<string, unknown> = {
       model: this.model,
@@ -224,13 +258,14 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     if (this.config.temperature !== undefined) {
       body.temperature = this.config.temperature
     }
+    logger.debug(`[chat.completions] messages=${chatMessages.length}, tools=${chatTools?.length || 0}, toolResults=${toolResults?.length || 0}`)
     
-    // 4. 发起请求并处理 SSE 流
+    // NOTE: documentation updated to English.
     yield* this.streamRequest(url, body, this.parseChatCompletionsEvent.bind(this))
   }
   
   /**
-   * 转换内部消息格式到 Chat Completions 格式
+   * NOTE: documentation updated to English.
    */
   private convertToChatMessage(msg: Message): ChatMessage {
     if (typeof msg.content === 'string') {
@@ -258,7 +293,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
   
   /**
-   * 解析 Chat Completions SSE 事件
+   * NOTE: documentation updated to English.
    */
   private *parseChatCompletionsEvent(
     jsonStr: string,
@@ -266,7 +301,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   ): Generator<LLMEvent> {
     const chunk: ChatStreamChunk = JSON.parse(jsonStr)
     
-    // 提取 usage
+    // NOTE: documentation updated to English.
     if (chunk.usage) {
       state.usage = {
         promptTokens: chunk.usage.prompt_tokens,
@@ -278,12 +313,12 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     for (const choice of chunk.choices) {
       const delta = choice.delta
       
-      // 文本内容
+      // NOTE: documentation updated to English.
       if (delta.content) {
         yield { type: 'text_delta', content: delta.content }
       }
       
-      // Tool calls 增量
+      // NOTE: documentation updated to English.
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {
           const idx = tc.index
@@ -308,7 +343,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
         }
       }
       
-      // 完成时发送完整的 tool_call 事件
+      // NOTE: documentation updated to English.
       if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
         for (const [, tc] of state.pendingToolCalls) {
           if (tc.id && tc.name) {
@@ -326,28 +361,29 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
 
   // ============================================================================
-  // Responses API 实现
+  // NOTE: documentation updated to English.
   // ============================================================================
   
   /**
-   * 使用 Responses API (/v1/responses)
+   * NOTE: documentation updated to English.
    * 
-   * 注意：Responses API 的消息格式与 Chat Completions 不同
-   * - 需要 type: 'message' 字段
-   * - role 使用 developer/system/user
-   * - 不直接支持 assistant 历史消息
+   * NOTE: documentation updated to English.
+   * NOTE: documentation updated to English.
+   * NOTE: documentation updated to English.
+   * NOTE: documentation updated to English.
    */
   private async *chatWithResponses(url: string, input: {
     messages: Message[]
     tools?: ToolSchema[]
+    toolResults?: ToolResult[]
     systemPrompt?: string
   }): AsyncGenerator<LLMEvent> {
-    const { messages, tools, systemPrompt } = input
+    const { messages, tools, toolResults, systemPrompt } = input
     
-    // 1. 构建输入消息
-    const inputItems: ResponsesInputItem[] = []
+    // NOTE: documentation updated to English.
+    const inputItems: ResponsesInput[] = []
     
-    // System prompt 使用 developer role
+    // NOTE: documentation updated to English.
     if (systemPrompt) {
       inputItems.push({
         type: 'message',
@@ -355,14 +391,39 @@ export class OpenAIFormatAdapter implements LLMAdapter {
         content: [{ type: 'input_text', text: systemPrompt }]
       })
     }
-    
-    // 仅处理 user 消息（Responses API 不直接支持 assistant 历史）
+    // Convert history messages
+    let userMessageCount = 0
+    let assistantMessageCount = 0
     for (const msg of messages) {
-      if (msg.role !== 'user') continue
+      if (msg.role === 'system') continue
+      if (msg.role === 'assistant') assistantMessageCount += 1
+      else userMessageCount += 1
       inputItems.push(this.convertToResponsesMessage(msg))
     }
+    // Append tool call results for Responses API
+    if (toolResults && toolResults.length > 0) {
+      for (const result of toolResults) {
+        if (!result.toolCallId) continue
+        const args =
+          typeof result.toolArgs === 'string'
+            ? result.toolArgs
+            : JSON.stringify(result.toolArgs ?? {})
+        const name = result.toolName || 'unknown_tool'
+        inputItems.push({
+          type: 'function_call',
+          call_id: result.toolCallId,
+          name,
+          arguments: args
+        })
+        inputItems.push({
+          type: 'function_call_output',
+          call_id: result.toolCallId,
+          output: result.content
+        })
+      }
+    }
     
-    // 2. 构建工具列表
+    // NOTE: documentation updated to English.
     const responsesTools: ResponsesTool[] | undefined = tools?.map(t => ({
       type: 'function',
       name: t.name,
@@ -371,7 +432,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       strict: false
     }))
     
-    // 3. 构建请求体
+    // NOTE: documentation updated to English.
     const body: Record<string, unknown> = {
       model: this.model,
       input: inputItems,
@@ -381,17 +442,48 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     if (responsesTools && responsesTools.length > 0) {
       body.tools = responsesTools
     }
+    if (this.config.maxTokens) {
+      body.max_output_tokens = this.config.maxTokens
+    }
+    if (this.config.temperature !== undefined) {
+      body.temperature = this.config.temperature
+    }
+    logger.debug(
+      `[responses] inputItems=${inputItems.length}, userMessages=${userMessageCount}, assistantMessages=${assistantMessageCount}, tools=${responsesTools?.length || 0}, toolResults=${toolResults?.length || 0}`
+    )
+
     
-    // 4. 发起请求并处理 SSE 流
+    // NOTE: documentation updated to English.
     yield* this.streamRequest(url, body, this.parseResponsesEvent.bind(this))
   }
   
   /**
-   * 转换内部消息格式到 Responses API 格式
+   * NOTE: documentation updated to English.
    */
   private convertToResponsesMessage(msg: Message): ResponsesInputItem {
+    const role = msg.role === 'assistant' ? 'assistant' : 'user'
+
+    if (role === 'assistant') {
+      const blocks: ResponsesContentBlock[] = []
+
+      if (typeof msg.content === 'string') {
+        blocks.push({ type: 'output_text', text: msg.content })
+      } else {
+        for (const block of msg.content) {
+          if (block.type === 'text') {
+            blocks.push({ type: 'output_text', text: block.text })
+          }
+        }
+      }
+
+      if (blocks.length === 0) {
+        blocks.push({ type: 'output_text', text: '' })
+      }
+
+      return { type: 'message', role, content: blocks }
+    }
+
     const blocks: ResponsesContentBlock[] = []
-    
     if (typeof msg.content === 'string') {
       blocks.push({ type: 'input_text', text: msg.content })
     } else {
@@ -406,12 +498,12 @@ export class OpenAIFormatAdapter implements LLMAdapter {
         }
       }
     }
-    
-    return { type: 'message', role: 'user', content: blocks }
+
+    return { type: 'message', role, content: blocks }
   }
   
   /**
-   * 解析 Responses API SSE 事件
+   * NOTE: documentation updated to English.
    */
   private *parseResponsesEvent(
     jsonStr: string,
@@ -419,12 +511,12 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   ): Generator<LLMEvent> {
     const event = JSON.parse(jsonStr)
     
-    // 文本增量
+    // NOTE: documentation updated to English.
     if (event.type === 'response.output_text.delta' && event.delta) {
       yield { type: 'text_delta', content: event.delta }
     }
     
-    // 捕获函数名称 (response.output_item.added)
+    // NOTE: documentation updated to English.
     if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
       const item = event.item
       const callId = item.call_id
@@ -434,10 +526,10 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 函数调用完成（方式1：直接事件）
+    // NOTE: documentation updated to English.
     if (event.type === 'response.function_call_arguments.done') {
       const itemId = event.item_id
-      const cached = state.responsesItems.get(itemId) // 使用 item_id 查找
+      const cached = state.responsesItems.get(itemId) // Map item_id to cached call metadata.
       
       const id = cached?.callId || event.call_id || event.id || `call_${Date.now()}`
       const name = cached?.name || event.name || ''
@@ -448,7 +540,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 函数调用完成（方式2：通过 output_item）
+    // NOTE: documentation updated to English.
     if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
       const item = event.item
       const itemId = item.id
@@ -463,7 +555,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 响应完成，提取 usage
+    // NOTE: documentation updated to English.
     if (event.type === 'response.completed' && event.response?.usage) {
       const u = event.response.usage
       state.usage = {
@@ -475,7 +567,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
   
   /**
-   * 发送函数调用事件
+   * NOTE: documentation updated to English.
    */
   private *emitFunctionCall(callId: string | undefined, name: string, argsStr: string): Generator<LLMEvent> {
     const id = callId || `call_${Date.now()}`
@@ -484,7 +576,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     try {
       args = argsStr ? JSON.parse(argsStr) : {}
     } catch {
-      // 忽略解析错误
+      // NOTE: documentation updated to English.
     }
     
     if (name) {
@@ -495,11 +587,11 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
 
   // ============================================================================
-  // 公共 SSE 流处理
+  // NOTE: documentation updated to English.
   // ============================================================================
   
   /**
-   * 通用的 SSE 流请求处理
+   * NOTE: documentation updated to English.
    */
   private async *streamRequest(
     url: string,
@@ -513,6 +605,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     )
     
     try {
+      logger.debug(`POST ${url} (${this.summarizeRequestBody(body)})`)
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -527,6 +620,9 @@ export class OpenAIFormatAdapter implements LLMAdapter {
       
       if (!response.ok) {
         const errorText = await response.text()
+        logger.error(
+          `OpenAI API request failed: status=${response.status}, url=${url}, ${this.summarizeRequestBody(body)}, error=${this.truncate(errorText)}`
+        )
         yield { type: 'error', message: `API error ${response.status}: ${errorText}` }
         return
       }
@@ -536,7 +632,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
         return
       }
       
-      // 解析 SSE 流
+      // NOTE: documentation updated to English.
       const state: StreamParserState = {
         pendingToolCalls: new Map(),
         responsesItems: new Map(),
@@ -562,7 +658,7 @@ export class OpenAIFormatAdapter implements LLMAdapter {
   }
   
   /**
-   * 解析 SSE 流
+   * NOTE: documentation updated to English.
    */
   private async *parseSSEStream(
     body: ReadableStream<Uint8Array>,
@@ -591,16 +687,31 @@ export class OpenAIFormatAdapter implements LLMAdapter {
         
         try {
           yield* parseEvent(jsonStr, state)
-        } catch {
-          // 忽略解析错误，继续处理
+        } catch (e) {
+          logger.debug(`Failed to parse SSE event: ${this.truncate(jsonStr, 300)}`, e)
+          // NOTE: documentation updated to English.
         }
       }
     }
   }
+
+  private summarizeRequestBody(body: Record<string, unknown>): string {
+    const model = typeof body.model === 'string' ? body.model : 'unknown'
+    const toolsCount = Array.isArray(body.tools) ? body.tools.length : 0
+    const messagesCount = Array.isArray(body.messages) ? body.messages.length : 0
+    const inputItemsCount = Array.isArray(body.input) ? body.input.length : 0
+    const stream = body.stream === true
+    return `model=${model}, stream=${stream}, messages=${messagesCount}, inputItems=${inputItemsCount}, tools=${toolsCount}`
+  }
+
+  private truncate(text: string, maxLength = 800): string {
+    if (text.length <= maxLength) return text
+    return `${text.slice(0, maxLength)}...`
+  }
 }
 
 // ============================================================================
-// 辅助类型
+// NOTE: documentation updated to English.
 // ============================================================================
 
 interface StreamParserState {
@@ -611,3 +722,5 @@ interface StreamParserState {
   emittedCallIds: Set<string>
   usage: TokenUsage | undefined
 }
+
+

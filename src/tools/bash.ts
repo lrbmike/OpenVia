@@ -1,21 +1,23 @@
-/**
- * Bash Tool - 执行 Shell 命令
+﻿/**
+ * Bash Tool - execute shell commands
  */
 
 import { z } from 'zod'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { ToolDefinition, ToolResult, ExecutionContext } from '../core/registry'
+import { Logger } from '../utils/logger'
 
 const execAsync = promisify(exec)
+const logger = new Logger('Tool:Bash')
 
-/** 参数 Schema */
+/** Input schema */
 const inputSchema = z.object({
   command: z.string().describe('The shell command to execute'),
   timeout: z.coerce.number().optional().describe('Timeout in milliseconds (default: 30000)')
 })
 
-/** Bash Tool 定义 */
+/** Bash tool definition */
 export const bashTool: ToolDefinition = {
   name: 'bash',
   description: 'Execute a shell command and return the output. Use this for running scripts, installing packages, file operations, etc.',
@@ -31,7 +33,7 @@ export const bashTool: ToolDefinition = {
     const { command, timeout = 30000 } = parsed.data
     
     try {
-      console.log(`[Bash] Executing: ${command.slice(0, 100)}...`)
+      logger.info(`[Bash] Executing: ${command.slice(0, 100)}...`)
       
       const { stdout, stderr } = await execAsync(command, {
         cwd: ctx.workDir,
@@ -48,7 +50,7 @@ export const bashTool: ToolDefinition = {
     } catch (error) {
       const err = error as { message: string; code?: number; signal?: string; stdout?: string; stderr?: string }
       
-      // 命令执行失败但有输出
+      // Command failed but returned output.
       if (err.stdout || err.stderr) {
         return {
           success: false,
@@ -67,3 +69,5 @@ export const bashTool: ToolDefinition = {
     }
   }
 }
+
+

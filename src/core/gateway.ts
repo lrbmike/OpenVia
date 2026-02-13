@@ -16,6 +16,9 @@ import type { LLMAdapter, ToolResult as LLMToolResult } from '../llm/adapter'
 import type { ToolRegistry, ToolResult, ExecutionContext } from './registry'
 import type { PolicyEngine, SessionContext } from './policy'
 import { ToolExecutor } from './executor'
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('Gateway')
 
 // ============================================================================
 // 类型定义
@@ -36,6 +39,7 @@ import type { Message, ContentBlock } from '../types'
 /** Agent 输入 */
 export interface AgentInput {
   message: string | ContentBlock[]
+  history?: Message[]
   session: SessionContext
   systemPrompt?: string
   onPermissionRequest?: (prompt: string) => Promise<boolean>
@@ -76,7 +80,7 @@ export class AgentGateway {
    * 处理用户消息
    */
   async *handleMessage(input: AgentInput): AsyncGenerator<AgentEvent> {
-    const { message, session, systemPrompt, onPermissionRequest } = input
+    const { message, history, session, systemPrompt, onPermissionRequest } = input
     
     // 构建执行上下文
     const execContext: ExecutionContext = {
@@ -88,8 +92,10 @@ export class AgentGateway {
     // 获取工具 schemas
     const tools = this.registry.getSchemas()
     
-    // 消息历史
-    const messages: Message[] = [{ role: 'user', content: message }]
+    // 消息历史（优先使用上层传入的会话历史）
+    const messages: Message[] = history && history.length > 0
+      ? [...history]
+      : [{ role: 'user', content: message }]
     
     // 完整响应
     let fullResponse = ''
@@ -100,8 +106,8 @@ export class AgentGateway {
     // 迭代处理（支持多轮工具调用）
     for (let iteration = 0; iteration < this.config.maxIterations!; iteration++) {
       const remaining = this.config.maxIterations! - iteration - 1
-      console.log(`[Gateway] Iteration ${iteration + 1}/${this.config.maxIterations} (${remaining} remaining)`)
-      console.log(`[Gateway] Calling LLM with ${messages.length} messages...`)
+      logger.info(`[Gateway] Iteration ${iteration + 1}/${this.config.maxIterations} (${remaining} remaining)`)
+      logger.info(`[Gateway] Calling LLM with ${messages.length} messages...`)
       
       // 收集当前轮的工具调用
       const pendingToolCalls: Array<{ id: string; name: string; args: unknown }> = []
@@ -132,7 +138,7 @@ export class AgentGateway {
                 args: event.args
               })
             } else {
-              console.warn(`[Gateway] Ignored tool_call with no name (id: ${event.id})`)
+              logger.warn(`[Gateway] Ignored tool_call with no name (id: ${event.id})`)
             }
             break
             
@@ -152,7 +158,7 @@ export class AgentGateway {
       
       // 处理工具调用
       if (pendingToolCalls.length === 0) {
-        console.log(`[Gateway] No tool calls, returning fullResponse (${fullResponse.length} chars): ${fullResponse.slice(0, 100)}...`)
+        logger.info(`[Gateway] No tool calls, returning fullResponse (${fullResponse.length} chars): ${fullResponse.slice(0, 100)}...`)
         yield { type: 'done', fullResponse }
         return
       }
@@ -170,6 +176,8 @@ export class AgentGateway {
           yield { type: 'tool_result', id: tc.id, name: tc.name, result }
           toolResultsForNextRound.push({
             toolCallId: tc.id,
+            toolName: tc.name,
+            toolArgs: tc.args,
             content: JSON.stringify(result),
             isError: true
           })
@@ -231,6 +239,8 @@ export class AgentGateway {
         
         toolResultsForNextRound.push({
           toolCallId: tc.id,
+          toolName: tc.name,
+          toolArgs: tc.args,
           content: JSON.stringify(result),
           isError: !result.success
         })
@@ -238,25 +248,10 @@ export class AgentGateway {
       
       // 保存到下一轮
       lastToolResults = toolResultsForNextRound
-      
-      // 将工具结果添加到消息历史
-      // 添加 assistant 的工具调用消息
-      messages.push({
-        role: 'assistant',
-        content: `[Tool calls: ${pendingToolCalls.map(t => t.name).join(', ')}]`
-      })
-      
-      // 添加工具结果作为 user 消息
-      messages.push({
-        role: 'user',
-        content: `Tool results:\n${toolResultsForNextRound.map(r => 
-          `- ${r.toolCallId}: ${r.content}`
-        ).join('\n')}`
-      })
     }
     
     // 超过最大迭代次数
-    console.log(`[Gateway] Max iterations (${this.config.maxIterations}) reached, stopping`)
+    logger.warn(`[Gateway] Max iterations (${this.config.maxIterations}) reached, stopping`)
     yield { type: 'error', message: `Max iterations (${this.config.maxIterations}) reached. Task may be incomplete.` }
   }
 }

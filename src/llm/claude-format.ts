@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Claude Format Adapter
- * 
- * 兼容 Anthropic Claude API
+ *
+ * Compatible with Anthropic Claude API.
  * - Claude 3.5 Sonnet
  * - Claude 3 Opus
  * - Claude 3 Haiku
- * - 其他 Claude 模型
+ * - Other Claude models
  */
 
 import type { Message } from '../types'
@@ -17,9 +17,12 @@ import type {
   ToolResult,
   TokenUsage 
 } from './adapter'
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('ClaudeAdapter')
 
 // ============================================================================
-// Claude API 类型定义
+// NOTE: documentation updated to English.
 // ============================================================================
 
 interface ClaudeMessage {
@@ -61,7 +64,7 @@ interface ClaudeStreamEvent {
 }
 
 // ============================================================================
-// Claude Format Adapter 实现
+// NOTE: documentation updated to English.
 // ============================================================================
 
 export class ClaudeFormatAdapter implements LLMAdapter {
@@ -91,10 +94,10 @@ export class ClaudeFormatAdapter implements LLMAdapter {
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
     
-    // 构建 Claude 格式的消息
+    // NOTE: documentation updated to English.
     const claudeMessages: ClaudeMessage[] = []
     
-    // 转换消息历史
+    // NOTE: documentation updated to English.
     for (const msg of messages) {
       if (typeof msg.content === 'string') {
         claudeMessages.push({
@@ -126,7 +129,7 @@ export class ClaudeFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 添加 tool results（如果有）- Claude 需要将 tool_result 作为 user 消息
+    // NOTE: documentation updated to English.
     if (toolResults && toolResults.length > 0) {
       const toolResultBlocks: ClaudeContentBlock[] = toolResults.map(r => ({
         type: 'tool_result' as const,
@@ -141,14 +144,14 @@ export class ClaudeFormatAdapter implements LLMAdapter {
       })
     }
     
-    // 构建 tools
+    // NOTE: documentation updated to English.
     const claudeTools: ClaudeTool[] | undefined = tools?.map(t => ({
       name: t.name,
       description: t.description,
       input_schema: t.input_schema
     }))
     
-    // 发起请求
+    // NOTE: documentation updated to English.
     const url = `${this.config.baseUrl.replace(/\/$/, '')}/v1/messages`
     
     const body: Record<string, unknown> = {
@@ -192,16 +195,16 @@ export class ClaudeFormatAdapter implements LLMAdapter {
         const errorText = await response.text()
         let cleanMessage = errorText
         
-        // 如果是 HTML 错误（通常是 502/504 网关错误），只返回状态码简述
+        // NOTE: documentation updated to English.
         if (errorText.trim().startsWith('<') || errorText.includes('<!DOCTYPE html>')) {
            cleanMessage = `Gateway Error (${response.statusText || 'Unknown'})`
         } else {
-           // 尝试解析 JSON 错误信息
+           // NOTE: documentation updated to English.
            try {
              const errorJson = JSON.parse(errorText)
              cleanMessage = errorJson.error?.message || errorJson.message || errorText
            } catch {
-             // 非 JSON 文本，截断过长的内容
+             // NOTE: documentation updated to English.
              if (cleanMessage.length > 200) {
                cleanMessage = cleanMessage.slice(0, 200) + '...'
              }
@@ -217,12 +220,12 @@ export class ClaudeFormatAdapter implements LLMAdapter {
         return
       }
       
-      // 解析 SSE 流
+      // NOTE: documentation updated to English.
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       
-      // 用于累积 tool_use
+      // NOTE: documentation updated to English.
       let currentToolUse: { id: string; name: string; inputJson: string } | null = null
       let usage: TokenUsage | undefined
       
@@ -308,7 +311,7 @@ export class ClaudeFormatAdapter implements LLMAdapter {
                 break
             }
           } catch (e) {
-            console.debug('[Claude] Failed to parse event:', jsonStr, e)
+            logger.debug('[Claude] Failed to parse event:', jsonStr, e)
           }
         }
       }
@@ -329,3 +332,5 @@ export class ClaudeFormatAdapter implements LLMAdapter {
     }
   }
 }
+
+

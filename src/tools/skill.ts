@@ -1,7 +1,7 @@
-/**
- * Skill Tool - 读取用户定义的 Agent Skills
- * 
- * 让 LLM 可以显式调用 Skills，实现可观察的 Skill 使用
+﻿/**
+ * Skill Tool - read user-defined Agent Skills
+ *
+ * Allows the LLM to call skills explicitly for observable skill usage.
  */
 
 import { z } from 'zod'
@@ -11,14 +11,14 @@ import { Logger } from '../utils/logger'
 
 const logger = new Logger('SkillTool')
 
-// 缓存已加载的 Skills
+// Cache loaded skills.
 let cachedSkills: LoadedSkill[] | null = null
 
 const inputSchema = z.object({
   name: z.string().describe('Name of the skill to read (directory name)')
 })
 
-/** Read Skill Tool 定义 */
+/** Read skill tool definition */
 export const readSkillTool: ToolDefinition = {
   name: 'read_skill',
   description: 'Read the instructions and content of a user-defined skill. Use this to get specialized knowledge or workflows for specific tasks. Call list_skills first to see available skills.',
@@ -34,14 +34,14 @@ export const readSkillTool: ToolDefinition = {
     const { name } = parsed.data
     
     try {
-      // 加载或使用缓存的 Skills
+      // Load or use cached skills.
       if (!cachedSkills) {
         const skillsDir = getDefaultSkillsDir()
         const result = await loadSkills(skillsDir)
         cachedSkills = result.skills
       }
       
-      // 查找指定的 Skill
+      // Find the requested skill.
       const skill = cachedSkills.find(s => s.id === name || s.metadata.name === name)
       
       if (!skill) {
@@ -54,7 +54,7 @@ export const readSkillTool: ToolDefinition = {
       
       logger.info(`Reading skill: ${skill.metadata.name} (${skill.id})`)
       
-      // 返回 Skill 内容
+      // Return skill content.
       const content = [
         `# ${skill.metadata.name}`,
         skill.metadata.description ? `> ${skill.metadata.description}` : '',
@@ -79,7 +79,7 @@ export const readSkillTool: ToolDefinition = {
 // List Skills Schema
 const listInputSchema = z.object({})
 
-/** List Skills Tool 定义 */
+/** List skills tool definition */
 export const listSkillsTool: ToolDefinition = {
   name: 'list_skills',
   description: 'List all available user-defined skills. Returns skill names and descriptions.',
@@ -88,7 +88,7 @@ export const listSkillsTool: ToolDefinition = {
   
   async executor(_args: unknown, _ctx: ExecutionContext): Promise<ToolResult> {
     try {
-      // 加载或使用缓存的 Skills
+      // Load or use cached skills.
       if (!cachedSkills) {
         const skillsDir = getDefaultSkillsDir()
         const result = await loadSkills(skillsDir)
@@ -122,8 +122,9 @@ export const listSkillsTool: ToolDefinition = {
   }
 }
 
-/** 刷新 Skills 缓存 */
+/** Clear the skills cache */
 export function refreshSkillsCache(): void {
   cachedSkills = null
   logger.debug('Skills cache cleared')
 }
+

@@ -1,27 +1,27 @@
 /**
- * LLM Adapter - 统一模型接口定义
- * 
- * 支持三种 API 格式：OpenAI / Claude / Gemini
- * 用户只需配置 format + apiKey + baseUrl + model 即可使用任意兼容模型
+ * LLM Adapter - unified model interface
+ *
+ * Supports three API formats: OpenAI / Claude / Gemini.
+ * Configure format + apiKey + baseUrl + model to use a compatible model.
  */
 
 import type { Message } from '../types'
 
 // ============================================================================
-// 核心类型定义
+// Core Types
 // ============================================================================
 
-/** 支持的 API 格式 */
+/** Supported API formats */
 export type LLMFormat = 'openai' | 'claude' | 'gemini'
 
-/** Token 使用统计 */
+/** Token usage stats */
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
 }
 
-/** LLM 事件流 */
+/** LLM event stream */
 export type LLMEvent =
   | { type: 'text_delta'; content: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
@@ -29,25 +29,27 @@ export type LLMEvent =
   | { type: 'done'; usage?: TokenUsage }
   | { type: 'error'; message: string }
 
-/** Tool Schema - JSON Schema 格式（三家通用） */
+/** Tool schema (shared JSON Schema) */
 export interface ToolSchema {
   name: string
   description: string
   input_schema: Record<string, unknown>  // JSON Schema
 }
 
-/** Tool 调用结果（回传给模型） */
+/** Tool call result (sent back to model) */
 export interface ToolResult {
   toolCallId: string
+  toolName?: string
+  toolArgs?: unknown
   content: string
   isError?: boolean
 }
 
 // ============================================================================
-// LLM Adapter 接口
+// LLM Adapter Interface
 // ============================================================================
 
-/** LLM 适配器配置 */
+/** LLM adapter config */
 export interface LLMConfig {
   format: LLMFormat
   apiKey: string
@@ -58,9 +60,9 @@ export interface LLMConfig {
   temperature?: number
 }
 
-/** LLM 适配器接口 */
+/** LLM adapter interface */
 export interface LLMAdapter {
-  /** 发送对话请求，返回事件流 */
+  /** Send a chat request and return an event stream */
   chat(input: {
     messages: Message[]
     tools?: ToolSchema[]
@@ -68,22 +70,22 @@ export interface LLMAdapter {
     systemPrompt?: string
   }): AsyncGenerator<LLMEvent>
   
-  /** 适配器名称 */
+  /** Adapter name */
   readonly name: string
   
-  /** 模型名称 */
+  /** Model name */
   readonly model: string
   
-  /** 最大上下文 token 数（估算） */
+  /** Max context tokens (estimated) */
   readonly maxContextTokens: number
 }
 
 // ============================================================================
-// 工厂函数
+// Factory
 // ============================================================================
 
 /**
- * 根据配置创建对应的 LLM 适配器
+ * Create an LLM adapter from config.
  */
 export async function createLLMAdapter(config: LLMConfig): Promise<LLMAdapter> {
   switch (config.format) {

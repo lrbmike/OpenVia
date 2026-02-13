@@ -1,20 +1,23 @@
-/**
- * Tool Executor - 工具执行层
+﻿/**
+ * Tool Executor - 宸ュ叿鎵ц灞?
  * 
- * 负责：
- * - 执行已被 Policy 批准的工具
- * - 参数校验（使用 Zod）
- * - 返回结构化结果
+ * 璐熻矗锛?
+ * - 鎵ц宸茶 Policy 鎵瑰噯鐨勫伐鍏?
+ * - 鍙傛暟鏍￠獙锛堜娇鐢?Zod锛?
+ * - 杩斿洖缁撴瀯鍖栫粨鏋?
  * 
- * 原则：
- * - 纯执行单元，不做权限判断
- * - Executor 不知道"用户是谁"
+ * 鍘熷垯锛?
+ * - 绾墽琛屽崟鍏冿紝涓嶅仛鏉冮檺鍒ゆ柇
+ * - Executor 涓嶇煡閬?鐢ㄦ埛鏄皝"
  */
 
 import type { ToolRegistry, ToolResult, ExecutionContext } from './registry'
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('Executor')
 
 // ============================================================================
-// Executor 实现
+// Executor 瀹炵幇
 // ============================================================================
 
 export class ToolExecutor {
@@ -25,7 +28,7 @@ export class ToolExecutor {
   }
   
   /**
-   * 执行工具
+   * 鎵ц宸ュ叿
    */
   async execute(input: {
     toolName: string
@@ -34,7 +37,7 @@ export class ToolExecutor {
   }): Promise<ToolResult> {
     const { toolName, args, context } = input
     
-    // 1. 获取工具定义
+    // 1. 鑾峰彇宸ュ叿瀹氫箟
     const tool = this.registry.get(toolName)
     if (!tool) {
       return {
@@ -43,7 +46,7 @@ export class ToolExecutor {
       }
     }
     
-    // 2. 参数校验
+    // 2. 鍙傛暟鏍￠獙
     const validation = this.registry.validateArgs(toolName, args)
     if (!validation.success) {
       return {
@@ -52,19 +55,19 @@ export class ToolExecutor {
       }
     }
     
-    // 3. 执行
+    // 3. 鎵ц
     try {
-      console.log(`[Executor] Executing tool: ${toolName}`)
+      logger.info(`[Executor] Executing tool: ${toolName}`)
       const startTime = Date.now()
       
       const result = await tool.executor(validation.data, context)
       
       const duration = Date.now() - startTime
-      console.log(`[Executor] Tool ${toolName} completed in ${duration}ms`)
+      logger.info(`[Executor] Tool ${toolName} completed in ${duration}ms`)
       
       return result
     } catch (error) {
-      console.error(`[Executor] Tool ${toolName} failed:`, error)
+      logger.error(`[Executor] Tool ${toolName} failed:`, error)
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error)
@@ -72,3 +75,4 @@ export class ToolExecutor {
     }
   }
 }
+

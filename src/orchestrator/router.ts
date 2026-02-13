@@ -1,7 +1,5 @@
 /**
- * Orchestrator Router - 新架构版本
- * 
- * 使用新的 Agent Client 替代旧的 Claude SDK
+ * Orchestrator Router
  */
 
 import { callAgent, ensureWorkDir } from '../ai'
@@ -61,7 +59,7 @@ export async function handleMessage(
 
   return runWithContext({ userId, channelId, sendReply }, async () => {
     // Permission check
-    if (!isUserAllowed(userId)) {
+    if (!isUserAllowed(userId, channelId)) {
       logAudit({ userId, action: 'message', result: 'denied', reason: 'User not in whitelist' })
       await sendReply("Sorry, you don't have permission to use this Bot.")
       return
@@ -69,7 +67,7 @@ export async function handleMessage(
 
     logAudit({ userId, action: 'message', result: 'allowed' })
 
-    const session = getSession(userId, userId)
+    const session = getSession(userId, channelId)
 
     // Add user message to history
     session.history.push({ role: 'user', content: input })

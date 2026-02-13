@@ -1,7 +1,7 @@
 import * as lark from '@larksuiteoapi/node-sdk'
 import { Channel } from './types'
 import { Logger } from '../utils/logger'
-import { isUserAllowed, logAudit } from '../orchestrator/policy'
+import { logAudit } from '../orchestrator/policy'
 import { PermissionBridge, PendingRequest } from '../utils/permission-bridge'
 import type { ContentBlock } from '../types/protocol'
 
@@ -116,7 +116,7 @@ export class FeishuChannel implements Channel {
                      logger.error(`Failed to download image ${imageKey}`, err)
                      await this.client.im.message.reply({
                         path: { message_id: messageId },
-                        data: { content: JSON.stringify({ text: "❌ Failed to download image." }), msg_type: 'text' }
+                        data: { content: JSON.stringify({ text: 'Failed to download image.' }), msg_type: 'text' }
                      })
                      return
                  }
@@ -128,17 +128,6 @@ export class FeishuChannel implements Channel {
             
             logger.info(`Received from ${userId}: ${text}`)
 
-            if (!isUserAllowed(userId)) {
-                await this.client.im.message.reply({
-                    path: { message_id: messageId },
-                    data: {
-                        content: JSON.stringify({ text: "⛔ Sorry, you don't have permission to use this Bot." }),
-                        msg_type: 'text'
-                    }
-                })
-                logger.warn(`Unauthorized access attempt from ${userId}`)
-                return
-            }
 
             logAudit({ userId, action: 'message', result: 'allowed' })
 
@@ -166,14 +155,14 @@ export class FeishuChannel implements Channel {
                 if (allowKeywords.includes(lowerInput)) {
                     logger.info(`[Feishu] User ${userId} allowed permission via chat`)
                     PermissionBridge.getInstance().resolveRequest(pendingRequest.id, 'allow')
-                    await sendReply('✅ Permission granted via chat.')
+                    await sendReply('Permission granted via chat.')
                     return
                 }
 
                 if (denyKeywords.includes(lowerInput)) {
                      logger.info(`[Feishu] User ${userId} denied permission via chat`)
                      PermissionBridge.getInstance().resolveRequest(pendingRequest.id, 'deny')
-                     await sendReply('❌ Permission denied via chat.')
+                     await sendReply('Permission denied via chat.')
                      return
                 }
                 
@@ -181,7 +170,7 @@ export class FeishuChannel implements Channel {
                 // If we proceed to messageHandler while Claude is waiting for this permission,
                 // it will hit the Mutex lock and wait forever (or timeout).
                 // So we MUST return here.
-                await sendReply('⚠️ You have a pending permission request. Please reply "ok" to allow or "no" to deny.')
+                await sendReply('You have a pending permission request. Please reply "ok" to allow or "no" to deny.')
                 return
             }
 
@@ -190,7 +179,7 @@ export class FeishuChannel implements Channel {
             const finalInput = imageContent ? [imageContent] : text
             messageHandler(finalInput, userId, this.id, sendReply).catch(error => {
                 logger.error('Error handling message:', error)
-                sendReply('❌ An error occurred while processing your request.')
+                sendReply('An error occurred while processing your request.')
             })
         },
         // Handle Card Action (Button Clicks)
@@ -209,10 +198,10 @@ export class FeishuChannel implements Channel {
              const bridge = PermissionBridge.getInstance()
              if (decision === 'allow') {
                  bridge.resolveRequest(reqId, 'allow')
-                 return { toast: { type: 'success', content: 'Allowed ✅' } }
+                 return { toast: { type: 'success', content: 'Allowed' } }
              } else {
                  bridge.resolveRequest(reqId, 'deny')
-                  return { toast: { type: 'success', content: 'Denied ❌' } }
+                  return { toast: { type: 'success', content: 'Denied' } }
              }
         }
     })
@@ -239,7 +228,7 @@ export class FeishuChannel implements Channel {
         header: {
           title: {
             tag: 'plain_text',
-            content: '⚠️ Permission Request'
+            content: 'Permission Request'
           },
           template: 'orange'
         },
@@ -248,7 +237,7 @@ export class FeishuChannel implements Channel {
             tag: 'div',
             text: {
               tag: 'lark_md',
-              content: `${req.message}\n\n💡 **Tip**: You can also reply "ok" to allow or "no" to deny.`
+              content: `${req.message}\n\n**Tip**: You can also reply "ok" to allow or "no" to deny.`
             }
           }
         ]

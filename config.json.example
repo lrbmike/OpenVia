@@ -8,6 +8,7 @@
     "feishu": {
       "appId": "your_app_id",
       "appSecret": "your_app_secret",
+      "allowedUserIds": ["ou_xxx", "ou_yyy"],
       "wsEndpoint": ""
     }
   },

@@ -1,10 +1,13 @@
-/**
+﻿/**
  * CLI Command Parsing Module
  *
  * Provides command-line argument parsing and help information display.
  */
 
 import { version } from '../package.json'
+import { Logger } from './utils/logger'
+
+const logger = new Logger('CLI')
 
 /** CLI Command Types */
 export type CLICommand = 'start' | 'init' | 'config' | 'help' | 'version'
@@ -172,23 +175,24 @@ export function parseCLI(argv: string[] = process.argv): ParsedCLI {
  * Display help information
  */
 export function showHelp(): void {
-  console.log(HELP_TEXT)
+  logger.info(HELP_TEXT)
 }
 
 /**
  * Display version information
  */
 export function showVersion(): void {
-  console.log(`OpenVia v${version}`)
+  logger.info(`OpenVia v${version}`)
 }
 
 /**
  * Display startup banner
  */
 export function showBanner(): void {
-  console.log('='.repeat(50))
-  console.log(`  OpenVia v${version}`)
-  console.log('  Universal CLI Gateway for AI Agents')
-  console.log('  Mode: Claude ACP (JSON-RPC)')
-  console.log('='.repeat(50))
+  logger.info('='.repeat(50))
+  logger.info(`  OpenVia v${version}`)
+  logger.info('  Universal CLI Gateway for AI Agents')
+  logger.info('  Mode: Claude ACP (JSON-RPC)')
+  logger.info('='.repeat(50))
 }
+

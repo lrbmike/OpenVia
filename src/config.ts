@@ -29,6 +29,7 @@ export interface AppConfig {
     feishu?: {
       appId: string
       appSecret: string
+      allowedUserIds?: string[]
       verificationToken?: string
       encryptKey?: string
       wsEndpoint?: string
@@ -86,6 +87,11 @@ export function getDefaultConfig(): AppConfig {
         default: 'telegram',
         telegram: {
             botToken: '',
+        },
+        feishu: {
+            appId: '',
+            appSecret: '',
+            allowedUserIds: []
         }
     },
     telegram: {
@@ -253,11 +259,29 @@ function loadConfigFromEnv(): Partial<AppConfig> {
       config.adapters.feishu = {
           appId: process.env.FEISHU_APP_ID,
           appSecret: process.env.FEISHU_APP_SECRET,
+          allowedUserIds: config.adapters?.feishu?.allowedUserIds || [],
           verificationToken: process.env.FEISHU_VERIFICATION_TOKEN,
           encryptKey: process.env.FEISHU_ENCRYPT_KEY,
           wsEndpoint: process.env.FEISHU_WS_ENDPOINT
       }
       logger.debug('Using Feishu credentials from environment')
+  }
+
+  if (process.env.FEISHU_ALLOWED_USER_IDS) {
+    const ids = process.env.FEISHU_ALLOWED_USER_IDS.split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0)
+
+    if (!config.adapters) config.adapters = { default: 'feishu' }
+    if (!config.adapters.feishu) {
+      config.adapters.feishu = {
+        appId: process.env.FEISHU_APP_ID || '',
+        appSecret: process.env.FEISHU_APP_SECRET || ''
+      }
+    }
+
+    config.adapters.feishu.allowedUserIds = ids
+    logger.debug('Using FEISHU_ALLOWED_USER_IDS from environment')
   }
 
   // Claude

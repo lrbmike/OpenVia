@@ -1,7 +1,6 @@
 /**
- * Agent Client - 新架构统一入口
+ * Agent Client
  * 
- * 替代旧的 claude-cli.ts / claude-sdk.ts
  * 使用新的 LLM Adapter + Agent Core 架构
  */
 
@@ -11,8 +10,20 @@ import { coreTools } from '../tools'
 import { loadSkills, getDefaultSkillsDir } from '../skills'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
+import type { Message } from '../types'
 
 const logger = new Logger('AgentClient')
+
+function toLogString(value: unknown, maxLength = 400): string {
+  try {
+    const text = typeof value === 'string' ? value : JSON.stringify(value)
+    if (!text) return ''
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+  } catch {
+    const text = String(value)
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+  }
+}
 
 // ============================================================================
 // 类型定义
@@ -158,7 +169,7 @@ import type { ContentBlock } from '../types/protocol'
  */
 export async function callAgent(
   message: string | ContentBlock[],
-  _context: { history: unknown[] },
+  context: { history: Message[] },
   requestContext: RequestContext
 ): Promise<{ action: 'reply' | 'error'; message?: string }> {
   if (!agentGateway) {
@@ -169,6 +180,9 @@ export async function callAgent(
   
   try {
     let fullResponse = ''
+    logger.info(
+      `Calling agent for user=${userId}, channel=${channelId}, history=${context.history.length}, inputType=${typeof message === 'string' ? 'text' : 'multimodal'}`
+    )
     
     // 权限请求处理器 - 使用 PermissionBridge 实现真正的用户等待
     const onPermissionRequest = async (prompt: string): Promise<boolean> => {
@@ -189,6 +203,7 @@ export async function callAgent(
     // 处理 Agent 事件流
     for await (const event of agentGateway.handleMessage({
       message,
+      history: context.history,
       session: { userId, chatId: channelId },
       systemPrompt,
       onPermissionRequest
@@ -200,15 +215,17 @@ export async function callAgent(
           break
           
         case 'tool_start':
-          logger.debug(`Tool started: ${event.name} ${JSON.stringify(event.args)}`)
+          logger.info(`Tool started: ${event.name} args=${toLogString(event.args)}`)
           break
           
         case 'tool_pending':
-          logger.debug(`Tool pending approval: ${event.name} ${JSON.stringify(event.args)}`)
+          logger.info(`Tool pending approval: ${event.name} args=${toLogString(event.args)}`)
           break
           
         case 'tool_result':
-          if (!event.result.success) {
+          if (event.result.success) {
+            logger.info(`Tool finished: ${event.name} (success=true)`)
+          } else {
             let errorMsg = `Tool ${event.name} failed: ${event.result.error}`
             if (event.result.data) {
               const dataStr = typeof event.result.data === 'object' 
@@ -221,9 +238,11 @@ export async function callAgent(
           break
           
         case 'done':
+          logger.info(`Agent completed for user=${userId}, channel=${channelId}, responseLength=${(event.fullResponse || fullResponse).length}`)
           return { action: 'reply', message: event.fullResponse || fullResponse }
           
         case 'error':
+          logger.error(`Agent gateway error for user=${userId}, channel=${channelId}: ${event.message}`)
           return { action: 'error', message: event.message }
       }
     }

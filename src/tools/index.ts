@@ -1,9 +1,9 @@
-/**
- * Tools Module - 内置工具（执行层能力）
- * 
- * 注意：这些是 Tools（工具），不是 Skills（知识扩展）
- * - Tools: 系统执行能力，如 bash、文件读写
- * - Skills: 用户定义的知识/工作流，存放在 ~/.openvia/skills/
+﻿/**
+ * Tools Module - built-in tools (execution capabilities)
+ *
+ * Note: These are Tools, not Skills.
+ * - Tools: system execution abilities like bash and file read/write.
+ * - Skills: user-defined knowledge/workflows stored in ~/.openvia/skills/
  */
 
 import type { ToolDefinition } from '../core/registry'
@@ -19,7 +19,7 @@ export { writeTool } from './write'
 export { editTool } from './edit'
 export { readSkillTool, listSkillsTool, refreshSkillsCache } from './skill'
 
-/** 所有核心 Tools */
+/** Core tools */
 export const coreTools: ToolDefinition[] = [
   bashTool,
   readTool,
@@ -28,3 +28,4 @@ export const coreTools: ToolDefinition[] = [
   listSkillsTool,
   readSkillTool
 ]
+

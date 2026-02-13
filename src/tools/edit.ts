@@ -1,13 +1,16 @@
-/**
- * Edit Tool - 编辑文件内容（替换指定部分）
+﻿/**
+ * Edit Tool - modify file contents (replace specific segments)
  */
 
 import { z } from 'zod'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import type { ToolDefinition, ToolResult, ExecutionContext } from '../core/registry'
+import { Logger } from '../utils/logger'
 
-/** 参数 Schema */
+const logger = new Logger('Tool:Edit')
+
+/** Input schema */
 const inputSchema = z.object({
   path: z.string().describe('The file path to edit'),
   oldContent: z.string().describe('The content to search for and replace'),
@@ -15,7 +18,7 @@ const inputSchema = z.object({
   replaceAll: z.boolean().optional().describe('Replace all occurrences (default: false, replace first only)')
 })
 
-/** Edit Tool 定义 */
+/** Edit tool definition */
 export const editTool: ToolDefinition = {
   name: 'edit_file',
   description: 'Edit a file by replacing specific content. Searches for oldContent and replaces it with newContent.',
@@ -30,14 +33,14 @@ export const editTool: ToolDefinition = {
     
     const { path: filePath, oldContent, newContent, replaceAll = false } = parsed.data
     
-    // 解析路径
+    // Resolve path.
     const absolutePath = isAbsolute(filePath) ? filePath : join(ctx.workDir, filePath)
     
     try {
-      // 读取文件
+      // Read file.
       const content = await readFile(absolutePath, 'utf8')
       
-      // 检查是否包含要替换的内容
+      // Ensure the target content exists.
       if (!content.includes(oldContent)) {
         return {
           success: false,
@@ -45,7 +48,7 @@ export const editTool: ToolDefinition = {
         }
       }
       
-      // 替换内容
+      // Replace content.
       let newFileContent: string
       let count: number
       
@@ -59,10 +62,10 @@ export const editTool: ToolDefinition = {
         newFileContent = content.replace(oldContent, newContent)
       }
       
-      // 写入文件
+      // Write file.
       await writeFile(absolutePath, newFileContent, 'utf8')
       
-      console.log(`[Edit] Edited file: ${absolutePath} (${count} replacement(s))`)
+      logger.info(`[Edit] Edited file: ${absolutePath} (${count} replacement(s))`)
       
       return {
         success: true,
@@ -80,7 +83,9 @@ export const editTool: ToolDefinition = {
   }
 }
 
-/** 转义正则特殊字符 */
+/** Escape regex special characters */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+

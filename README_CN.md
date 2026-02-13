@@ -99,7 +99,8 @@ openvia init
     },
     "feishu": {
       "appId": "your-app-id",
-      "appSecret": "your-app-secret"
+      "appSecret": "your-app-secret",
+      "allowedUserIds": ["ou_xxx", "ou_yyy"]
     }
   },
   "llm": {

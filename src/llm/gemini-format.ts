@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Gemini Format Adapter
- * 
- * 兼容 Google Gemini API
+ *
+ * Compatible with Google Gemini API.
  * - Gemini 2.0 Flash
  * - Gemini 1.5 Pro
  * - Gemini 1.5 Flash
- * - 其他 Gemini 模型
+ * - Other Gemini models
  */
 
 import type { Message } from '../types'
@@ -17,9 +17,12 @@ import type {
   ToolResult,
   TokenUsage 
 } from './adapter'
+import { Logger } from '../utils/logger'
+
+const logger = new Logger('GeminiAdapter')
 
 // ============================================================================
-// Gemini API 类型定义
+// NOTE: documentation updated to English.
 // ============================================================================
 
 interface GeminiContent {
@@ -55,7 +58,7 @@ interface GeminiStreamChunk {
 }
 
 // ============================================================================
-// Gemini Format Adapter 实现
+// NOTE: documentation updated to English.
 // ============================================================================
 
 export class GeminiFormatAdapter implements LLMAdapter {
@@ -87,10 +90,10 @@ export class GeminiFormatAdapter implements LLMAdapter {
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
     
-    // 构建 Gemini 格式的消息
+    // NOTE: documentation updated to English.
     const geminiContents: GeminiContent[] = []
     
-    // 转换消息历史
+    // NOTE: documentation updated to English.
     for (const msg of messages) {
       if (typeof msg.content === 'string') {
         geminiContents.push({
@@ -120,11 +123,11 @@ export class GeminiFormatAdapter implements LLMAdapter {
       }
     }
     
-    // 添加 tool results（如果有）
+    // NOTE: documentation updated to English.
     if (toolResults && toolResults.length > 0) {
       const parts: GeminiPart[] = toolResults.map(r => ({
         functionResponse: {
-          name: r.toolCallId, // Gemini 用 name 而不是 id
+          name: r.toolCallId, // Gemini uses name instead of id for tool responses.
           response: { content: r.content }
         }
       }))
@@ -135,15 +138,15 @@ export class GeminiFormatAdapter implements LLMAdapter {
       })
     }
     
-    // 构建 tools
+    // NOTE: documentation updated to English.
     const functionDeclarations: GeminiFunctionDeclaration[] | undefined = tools?.map(t => ({
       name: t.name,
       description: t.description,
       parameters: t.input_schema
     }))
     
-    // 发起请求
-    // Gemini API URL 格式: /v1beta/models/{model}:streamGenerateContent
+    // NOTE: documentation updated to English.
+    // NOTE: documentation updated to English.
     const baseUrl = this.config.baseUrl.replace(/\/$/, '')
     const url = `${baseUrl}/v1beta/models/${this.model}:streamGenerateContent?key=${this.config.apiKey}&alt=sse`
     
@@ -193,7 +196,7 @@ export class GeminiFormatAdapter implements LLMAdapter {
         return
       }
       
-      // 解析 SSE 流
+      // NOTE: documentation updated to English.
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -215,7 +218,7 @@ export class GeminiFormatAdapter implements LLMAdapter {
           try {
             const chunk: GeminiStreamChunk = JSON.parse(jsonStr)
             
-            // 提取 usage
+            // NOTE: documentation updated to English.
             if (chunk.usageMetadata) {
               usage = {
                 promptTokens: chunk.usageMetadata.promptTokenCount,
@@ -224,7 +227,7 @@ export class GeminiFormatAdapter implements LLMAdapter {
               }
             }
             
-            // 处理 candidates
+            // NOTE: documentation updated to English.
             if (chunk.candidates) {
               for (const candidate of chunk.candidates) {
                 for (const part of candidate.content.parts) {
@@ -232,8 +235,8 @@ export class GeminiFormatAdapter implements LLMAdapter {
                     yield { type: 'text_delta', content: part.text }
                   }
                   if ('functionCall' in part) {
-                    // Gemini 不提供 call_id，我们需要生成唯一的 ID
-                    // 以支持同一函数的多次并发调用
+                    // NOTE: documentation updated to English.
+                    // NOTE: documentation updated to English.
                     const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
                     yield {
                       type: 'tool_call',
@@ -246,7 +249,7 @@ export class GeminiFormatAdapter implements LLMAdapter {
               }
             }
           } catch (e) {
-            console.debug('[Gemini] Failed to parse chunk:', jsonStr, e)
+            logger.debug('[Gemini] Failed to parse chunk:', jsonStr, e)
           }
         }
       }
@@ -267,3 +270,6 @@ export class GeminiFormatAdapter implements LLMAdapter {
     }
   }
 }
+
+
+

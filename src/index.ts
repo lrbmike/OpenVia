@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * OpenVia - Universal CLI Gateway for AI Agents
  *
@@ -62,10 +62,12 @@ async function startBotCommand(): Promise<void> {
   logger.info('Initializing...')
  
   // Initialize Policy
-  const allowedIds = config.adapters.telegram?.allowedUserIds || config.telegram.allowedUserIds || []
-  initPolicy(allowedIds)
+  initPolicy({
+    telegram: config.adapters.telegram?.allowedUserIds || config.telegram.allowedUserIds || [],
+    feishu: config.adapters.feishu?.allowedUserIds || []
+  })
  
-  // Initialize Agent Client (新架构)
+  // Initialize Agent Client (鏂版灦鏋?
   const sessionsDir = getSessionsDir()
   await initAgentClient({
     llm: config.llm,
@@ -90,20 +92,20 @@ function initCommand(): void {
   const result = initConfig()
 
   if (result.created) {
-    console.log('✓ Configuration initialized successfully!')
-    console.log(`  Config file: ${result.path}`)
-    console.log('')
-    console.log('Next steps:')
-    console.log('  1. Set your Telegram Bot Token:')
-    console.log('     export TELEGRAM_BOT_TOKEN="your-token"')
-    console.log('     # or')
-    console.log('     openvia config set telegram.botToken "your-token"')
-    console.log('')
-    console.log('  2. Start the bot:')
-    console.log('     openvia')
+    logger.info('OK: Configuration initialized successfully!')
+    logger.info(`  Config file: ${result.path}`)
+    logger.info('')
+    logger.info('Next steps:')
+    logger.info('  1. Set your Telegram Bot Token:')
+    logger.info('     export TELEGRAM_BOT_TOKEN="your-token"')
+    logger.info('     # or')
+    logger.info('     openvia config set telegram.botToken "your-token"')
+    logger.info('')
+    logger.info('  2. Start the bot:')
+    logger.info('     openvia')
   } else {
-    console.log('Configuration already exists.')
-    console.log(`  Config file: ${result.path}`)
+    logger.info('Configuration already exists.')
+    logger.info(`  Config file: ${result.path}`)
   }
 }
 
@@ -114,8 +116,8 @@ function configCommand(args: string[]): void {
   if (args.length === 0) {
     // Show current configuration
     const displayConfig = getDisplayConfig()
-    console.log('Current configuration:')
-    console.log(JSON.stringify(displayConfig, null, 2))
+    logger.info('Current configuration:')
+    logger.info(JSON.stringify(displayConfig, null, 2))
     return
   }
 
@@ -124,31 +126,31 @@ function configCommand(args: string[]): void {
   switch (subCommand) {
     case 'set':
       if (args.length < 3) {
-        console.error('Usage: openvia config set <key> <value>')
-        console.error('Example: openvia config set claude.timeout 60000')
+        logger.error('Usage: openvia config set <key> <value>')
+        logger.error('Example: openvia config set claude.timeout 60000')
         process.exit(1)
       }
       setConfigValue(args[1], args[2])
-      console.log(`✓ Set ${args[1]} = ${args[2]}`)
+      logger.info(`OK: Set ${args[1]} = ${args[2]}`)
       break
 
     case 'get':
       if (args.length < 2) {
-        console.error('Usage: openvia config get <key>')
-        console.error('Example: openvia config get claude.timeout')
+        logger.error('Usage: openvia config get <key>')
+        logger.error('Example: openvia config get claude.timeout')
         process.exit(1)
       }
       const value = getConfigValue(args[1])
       if (value === undefined) {
-        console.log(`${args[1]}: (not set)`)
+        logger.info(`${args[1]}: (not set)`)
       } else {
-        console.log(`${args[1]}: ${JSON.stringify(value)}`)
+        logger.info(`${args[1]}: ${JSON.stringify(value)}`)
       }
       break
 
     default:
-      console.error(`Unknown config subcommand: ${subCommand}`)
-      console.error('Available: set, get')
+      logger.error(`Unknown config subcommand: ${subCommand}`)
+      logger.error('Available: set, get')
       process.exit(1)
   }
 }
@@ -219,3 +221,5 @@ main().catch((error) => {
   logger.error('Fatal error:', error)
   process.exit(1)
 })
+
+
