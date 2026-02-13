@@ -89,6 +89,10 @@ export class GeminiFormatAdapter implements LLMAdapter {
     systemPrompt?: string
   }): AsyncGenerator<LLMEvent> {
     const { messages, tools, toolResults, systemPrompt } = input
+
+    logger.debug(
+      `[gemini] request start messages=${messages.length}, tools=${tools?.length || 0}, toolResults=${toolResults?.length || 0}, systemPrompt=${systemPrompt ? 'yes' : 'no'}`
+    )
     
     // NOTE: documentation updated to English.
     const geminiContents: GeminiContent[] = []
@@ -127,10 +131,19 @@ export class GeminiFormatAdapter implements LLMAdapter {
     if (toolResults && toolResults.length > 0) {
       for (const r of toolResults) {
         if (!r.toolName) {
+          logger.error(
+            `[gemini] toolResult missing toolName (toolCallId=${r.toolCallId}, isError=${r.isError ? 'yes' : 'no'})`
+          )
           yield { type: 'error', message: 'Gemini tool result missing toolName for functionResponse.' }
           return
         }
       }
+
+      logger.debug(
+        `[gemini] toolResults summary: ${toolResults
+          .map(r => `${r.toolName}:${r.toolCallId}:${(r.content || '').length}`)
+          .join(', ')}`
+      )
 
       const parts: GeminiPart[] = toolResults.map(r => ({
         functionResponse: {
@@ -156,6 +169,7 @@ export class GeminiFormatAdapter implements LLMAdapter {
     // NOTE: documentation updated to English.
     const baseUrl = this.config.baseUrl.replace(/\/$/, '')
     const url = `${baseUrl}/v1beta/models/${this.model}:streamGenerateContent?key=${this.config.apiKey}&alt=sse`
+    const safeUrl = url.replace(/key=[^&]+/i, 'key=***')
     
     const body: Record<string, unknown> = {
       contents: geminiContents,
@@ -181,6 +195,9 @@ export class GeminiFormatAdapter implements LLMAdapter {
     const timeoutId = setTimeout(() => controller.abort(), timeout)
     
     try {
+      logger.debug(
+        `[gemini] POST ${safeUrl} (model=${this.model}, contents=${geminiContents.length}, tools=${functionDeclarations?.length || 0})`
+      )
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -194,11 +211,15 @@ export class GeminiFormatAdapter implements LLMAdapter {
       
       if (!response.ok) {
         const errorText = await response.text()
+        logger.error(
+          `[gemini] API error status=${response.status} body=${errorText.slice(0, 800)}`
+        )
         yield { type: 'error', message: `API error ${response.status}: ${errorText}` }
         return
       }
       
       if (!response.body) {
+        logger.error('[gemini] No response body')
         yield { type: 'error', message: 'No response body' }
         return
       }
