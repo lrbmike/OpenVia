@@ -278,6 +278,13 @@ export function getLLMInfo(): { name: string; model: string } | null {
 }
 
 /**
+ * 获取 LLM 适配器实例（供 GoalLoop 等模块使用）
+ */
+export function getLLMAdapter(): LLMAdapter | null {
+  return llmAdapter
+}
+
+/**
  * 获取工作目录
  */
 export function getWorkDir(): string {

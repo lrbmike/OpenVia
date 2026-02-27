@@ -31,13 +31,15 @@ bun run ~/.openvia/skills/web-search/scripts/search.ts "<query>"
 **Windows (PowerShell):**
 
 ```powershell
-bun run "$HOME/.openvia/skills/web-search/scripts/search.ts" "<query>"
+bun run "$HOME\.openvia\skills\web-search\scripts\search.ts" "<query>"
+# If $HOME fails, use:
+# bun run "$env:USERPROFILE\.openvia\skills\web-search\scripts\search.ts" "<query>"
 ```
 
 **Example:**
 
 ```bash
-bun run "$HOME/.openvia/skills/web-search/scripts/search.ts" "Bun 1.2 release notes"
+bun run "~/.openvia/skills/web-search/scripts/search.ts" "Bun 1.2 release notes"
 ```
 
 ## Configuration

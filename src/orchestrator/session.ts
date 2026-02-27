@@ -13,6 +13,8 @@ interface Session {
   chatId: string
   history: Message[]
   lastActivity: number
+  /** 当前活跃目标 ID（Goal-Driven 模式） */
+  activeGoalId?: string
 }
 
 /** Session Storage (In-memory) */
@@ -95,4 +97,3 @@ export function cleanupExpiredSessions(): void {
 
 // Periodically clean up expired sessions (every 5 minutes)
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000)
-

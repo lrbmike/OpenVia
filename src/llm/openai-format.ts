@@ -223,6 +223,24 @@ export class OpenAIFormatAdapter implements LLMAdapter {
     }
     
     if (toolResults && toolResults.length > 0) {
+      // OpenAI API requires: assistant message with tool_calls BEFORE tool result messages
+      // Reconstruct the assistant's tool_calls from the result metadata
+      const assistantToolCalls: ChatToolCall[] = toolResults.map(result => ({
+        id: result.toolCallId,
+        type: 'function' as const,
+        function: {
+          name: result.toolName || 'unknown',
+          arguments: typeof result.toolArgs === 'string'
+            ? result.toolArgs
+            : JSON.stringify(result.toolArgs ?? {})
+        }
+      }))
+      chatMessages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: assistantToolCalls
+      })
+
       for (const result of toolResults) {
         chatMessages.push({
           role: 'tool',
