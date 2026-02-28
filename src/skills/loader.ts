@@ -88,6 +88,59 @@ export interface SkillsLoadResult {
   errors: string[]
 }
 
+/**
+ * 将 Skills CLI 默认安装目录（~/.agents/skills）中的技能镜像到 OpenVia 目录（~/.openvia/skills）
+ * 仅拷贝缺失目录，不覆盖已存在目录。
+ */
+export async function syncAgentsSkillsToOpenVia(): Promise<void> {
+  try {
+    const homeDir = process.env.HOME || process.env.USERPROFILE || ''
+    const agentsSkillsDir = path.join(homeDir, '.agents', 'skills')
+    const openviaSkillsDir = getDefaultSkillsDir()
+
+    const agentsStat = await fs.stat(agentsSkillsDir).catch(() => null)
+    if (!agentsStat?.isDirectory()) return
+
+    await fs.mkdir(openviaSkillsDir, { recursive: true }).catch(() => {})
+    const entries = await fs.readdir(agentsSkillsDir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const src = path.join(agentsSkillsDir, entry.name)
+      const dst = path.join(openviaSkillsDir, entry.name)
+      const exists = await fs.stat(dst).catch(() => null)
+      if (!exists) {
+        await fs.cp(src, dst, { recursive: true })
+        logger.info(`Mirrored skill from .agents to .openvia: ${entry.name}`)
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to sync .agents skills to .openvia: ${err}`)
+  }
+}
+
+/**
+ * 仅同步单个技能目录（用于 npx skills add 成功后的即时热同步）
+ */
+export async function syncSingleAgentSkillToOpenVia(skillId: string): Promise<void> {
+  try {
+    const homeDir = process.env.HOME || process.env.USERPROFILE || ''
+    const src = path.join(homeDir, '.agents', 'skills', skillId)
+    const dstRoot = getDefaultSkillsDir()
+    const dst = path.join(dstRoot, skillId)
+
+    const srcStat = await fs.stat(src).catch(() => null)
+    if (!srcStat?.isDirectory()) return
+
+    await fs.mkdir(dstRoot, { recursive: true }).catch(() => {})
+    await fs.rm(dst, { recursive: true, force: true }).catch(() => {})
+    await fs.cp(src, dst, { recursive: true })
+    logger.info(`Mirrored newly installed skill to .openvia: ${skillId}`)
+  } catch (err) {
+    logger.warn(`Failed to mirror installed skill "${skillId}" to .openvia: ${err}`)
+  }
+}
+
 // ============================================================================
 // Skills 加载器
 // ============================================================================
@@ -95,75 +148,81 @@ export interface SkillsLoadResult {
 /**
  * 从指定目录加载所有 Skills
  */
-export async function loadSkills(skillsDir: string): Promise<SkillsLoadResult> {
+export async function loadSkills(skillsDir: string | string[]): Promise<SkillsLoadResult> {
+  const dirs = Array.isArray(skillsDir) ? skillsDir : [skillsDir]
   const skills: LoadedSkill[] = []
   const errors: string[] = []
+  const byId = new Map<string, LoadedSkill>()
   
-  try {
-    // 检查目录是否存在
-    const stat = await fs.stat(skillsDir).catch(() => null)
-    if (!stat?.isDirectory()) {
-      logger.debug(`Skills directory not found: ${skillsDir}`)
-      return { skills: [], errors: [] }
-    }
-    
-    // 读取所有子目录
-    const entries = await fs.readdir(skillsDir, { withFileTypes: true })
-    
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      
-      const skillPath = path.join(skillsDir, entry.name)
-      const skillMdPath = path.join(skillPath, 'SKILL.md')
-      
-      try {
-        // 检查 SKILL.md 是否存在
-        const skillMdStat = await fs.stat(skillMdPath).catch(() => null)
-        if (!skillMdStat?.isFile()) {
-          logger.debug(`Skipping ${entry.name}: no SKILL.md found`)
-          continue
-        }
-        
-        // 读取 SKILL.md
-        const content = await fs.readFile(skillMdPath, 'utf-8')
-        
-        // 解析元数据和指令
-        const { metadata, instructions } = parseSkillMd(content, entry.name)
-        
-        // SQLite Registry: 如果该技能还未被登记进 SQL，将其登记
-        // 首先从 SQL 获取它之前的强制 scope；如果 SQL 里没有，才用 YAML 里解析的
-        const recordScope = getSkillScope(entry.name) // 获取注册表值，这可能没找到所以默认为 persistent
-        if (!recordScope || recordScope === 'persistent') {
-           // 若为空或默认值，登记当前实际的 metadata.scope 进去，以便以后持久化
-           registerInstalledSkill(entry.name, metadata.name, metadata.description, metadata.scope || 'persistent')
-        } 
-        
-        // 最终决定它的 scope: SQLite优先 > YAML覆盖 > persistent默认
-        metadata.scope = recordScope !== 'persistent' ? recordScope : (metadata.scope || 'persistent')
-        
-        skills.push({
-          id: entry.name,
-          metadata,
-          instructions,
-          path: skillPath
-        })
-        
-        logger.info(`Loaded skill: ${metadata.name} (${entry.name}) [scope=${metadata.scope}]`)
-        
-      } catch (err) {
-        const message = `Failed to load skill ${entry.name}: ${err}`
-        errors.push(message)
-        logger.warn(message)
+  for (const dir of dirs) {
+    try {
+      // 检查目录是否存在
+      const stat = await fs.stat(dir).catch(() => null)
+      if (!stat?.isDirectory()) {
+        logger.debug(`Skills directory not found: ${dir}`)
+        continue
       }
+      
+      // 读取所有子目录
+      const entries = await fs.readdir(dir, { withFileTypes: true })
+      
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        
+        const skillPath = path.join(dir, entry.name)
+        const skillMdPath = path.join(skillPath, 'SKILL.md')
+        
+        try {
+          // 检查 SKILL.md 是否存在
+          const skillMdStat = await fs.stat(skillMdPath).catch(() => null)
+          if (!skillMdStat?.isFile()) {
+            logger.debug(`Skipping ${entry.name}: no SKILL.md found`)
+            continue
+          }
+          
+          // 读取 SKILL.md
+          const content = await fs.readFile(skillMdPath, 'utf-8')
+          
+          // 解析元数据和指令
+          const { metadata, instructions } = parseSkillMd(content, entry.name)
+          
+          // SQLite Registry: 保持技能元信息可追踪
+          const recordScope = getSkillScope(entry.name)
+          if (!recordScope || recordScope === 'persistent') {
+            registerInstalledSkill(entry.name, metadata.name, metadata.description, metadata.scope || 'persistent')
+          } 
+          
+          // 最终 scope: SQLite 优先 > YAML > persistent
+          metadata.scope = recordScope !== 'persistent' ? recordScope : (metadata.scope || 'persistent')
+          
+          const loaded: LoadedSkill = {
+            id: entry.name,
+            metadata,
+            instructions,
+            path: skillPath
+          }
+
+          // 目录优先级：前面的目录优先（通常仅使用 .openvia）
+          if (!byId.has(entry.name)) {
+            byId.set(entry.name, loaded)
+            logger.info(`Loaded skill: ${metadata.name} (${entry.name}) [scope=${metadata.scope}] from ${dir}`)
+          }
+          
+        } catch (err) {
+          const message = `Failed to load skill ${entry.name}: ${err}`
+          errors.push(message)
+          logger.warn(message)
+        }
+      }
+    } catch (err) {
+      const message = `Failed to read skills directory ${dir}: ${err}`
+      errors.push(message)
+      logger.error(message)
     }
-    
-    logger.info(`Loaded ${skills.length} skills from ${skillsDir}`)
-    
-  } catch (err) {
-    const message = `Failed to read skills directory: ${err}`
-    errors.push(message)
-    logger.error(message)
   }
+
+  skills.push(...byId.values())
+  logger.info(`Loaded ${skills.length} skills from [${dirs.join(', ')}]`)
   
   return { skills, errors }
 }

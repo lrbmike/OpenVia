@@ -160,6 +160,11 @@ export class PolicyEngine {
     if (readOnlyTools.some(t => tool.name.toLowerCase().includes(t))) {
       return { type: 'allow' }
     }
+
+    // bind_skill 仅写能力映射，不涉及文件内容修改，默认允许
+    if (tool.name === 'bind_skill') {
+      return { type: 'allow' }
+    }
     
     // 4. 鍐呯疆瑙勫垯锛欱ash 鍛戒护妫€鏌?
     if (tool.name.toLowerCase() === 'bash' || tool.name.toLowerCase() === 'shell') {

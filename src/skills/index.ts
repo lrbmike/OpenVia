@@ -9,6 +9,8 @@ export {
   loadSkills,
   formatSkillsForPrompt,
   getDefaultSkillsDir,
+  syncAgentsSkillsToOpenVia,
+  syncSingleAgentSkillToOpenVia,
   syncProjectSkillsToGlobal,
   type SkillMetadata,
   type LoadedSkill,

@@ -7,7 +7,7 @@
 import { createLLMAdapter, type LLMAdapter, type LLMConfig } from '../llm'
 import { ToolRegistry, getToolRegistry, PolicyEngine, getPolicyEngine, AgentGateway } from '../core'
 import { coreTools } from '../tools'
-import { loadSkills, getDefaultSkillsDir, syncProjectSkillsToGlobal } from '../skills'
+import { loadSkills, getDefaultSkillsDir, syncProjectSkillsToGlobal, syncAgentsSkillsToOpenVia, syncSingleAgentSkillToOpenVia } from '../skills'
 import { initRegistry, getBoundSkillsForGoal } from '../skills/registry'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
@@ -86,6 +86,8 @@ export async function initAgentClient(
   
   // 1. 先把工程下自带技能同步镜像给全局
   await syncProjectSkillsToGlobal()
+  // 2. 将 skills CLI 默认目录（.agents）镜像到 .openvia，统一后续读取目录
+  await syncAgentsSkillsToOpenVia()
   
   // 仅为了打印最初的信息先加载一次，真正的拼接在后面每次调用里
   const skillsDir = getDefaultSkillsDir()
@@ -182,6 +184,8 @@ export async function callAgent(
     refreshSkillsCache()
     
     let currentSystemPrompt = baseSystemPrompt
+    // 每轮先把 .agents 的变化镜像到 .openvia，再统一从 .openvia 热加载
+    await syncAgentsSkillsToOpenVia()
     const skillsDir = getDefaultSkillsDir()
     const { skills, errors } = await loadSkills(skillsDir)
     if (errors.length > 0) {
@@ -210,7 +214,7 @@ export async function callAgent(
           `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''} (path: ${s.path.replace(/\\/g, '/')})`
         ).join('\n')
         
-        skillsPrompt = `\n## Available Skills (Context: ${activeGoalId ? 'Goal-' + activeGoalId.slice(0,6) : 'Chat'})\n\nYou have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.\n\nPath rule for bash calls: always use forward slashes in script paths and quote full path.\n\n${skillsList}\n`
+        skillsPrompt = `\n## Available Skills (Context: ${activeGoalId ? 'Goal-' + activeGoalId : 'Chat'})\n\nYou have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.\n\n${activeGoalId ? `Current Goal ID (use this exact value if calling bind_skill): ${activeGoalId}\n\n` : ''}Path rule for bash calls: always use forward slashes in script paths and quote full path.\n\n${skillsList}\n`
       }
       currentSystemPrompt += '\n' + skillsPrompt
     }
@@ -286,13 +290,12 @@ export async function callAgent(
                 logger.info(`[Auto-Bind] Detected installation of skill '${skillId}'. Automatically binding to Goal ${activeGoalId}...`)
                 try {
                   const { bindSkillToGoal, getSkillScope } = await import('../skills/registry')
+                  await syncSingleAgentSkillToOpenVia(skillId)
                   
-                  // 仅当这是一个新技能还没入库，或其生命周期未限定为核心时才能动态绑定
-                  const scope = getSkillScope(skillId)
-                  if (scope !== 'core' && scope !== 'persistent') {
-                    bindSkillToGoal(skillId, activeGoalId)
-                    logger.info(`[Auto-Bind] Successfully bound ${skillId} to ${activeGoalId}`)
-                  }
+                  // 无论默认 scope 如何，都绑定到当前 goal（对 persistent 无副作用，对 task 是必需）
+                  getSkillScope(skillId)
+                  bindSkillToGoal(skillId, activeGoalId)
+                  logger.info(`[Auto-Bind] Successfully bound ${skillId} to ${activeGoalId}`)
                 } catch (err) {
                   logger.warn(`[Auto-Bind] Failed to automatically bind ${skillId}: ${err}`)
                 }

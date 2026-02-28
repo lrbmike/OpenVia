@@ -141,8 +141,8 @@ export async function runGoalLoop(
         lowerStep.includes('capability') ||
         lowerStep.includes('能力')
       const runtimeOptions = isSkillManagementStep
-        ? { maxIterations: 8 }
-        : { deniedTools: ['list_skills', 'read_skill'], maxIterations: 6 }
+        ? { maxIterations: 14 }
+        : { deniedTools: ['list_skills', 'read_skill'], maxIterations: 10 }
       const stepResult = await callAgent(
         stepInstruction,
         { history },

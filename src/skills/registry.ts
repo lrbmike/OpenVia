@@ -75,12 +75,29 @@ export function registerInstalledSkill(
   description: string,
   scope: 'core' | 'task' | 'persistent' = 'persistent'
 ): void {
+  const existing = getDb()
+    .prepare(`SELECT name, description, scope FROM installed_capabilities WHERE skill_id = ?`)
+    .get(skillId) as { name: string; description: string; scope: string } | undefined
+
+  if (
+    existing &&
+    existing.name === name &&
+    (existing.description || '') === (description || '') &&
+    existing.scope === scope
+  ) {
+    return
+  }
+
   const statement = getDb().prepare(
     `INSERT OR REPLACE INTO installed_capabilities (skill_id, name, description, scope) 
      VALUES (?, ?, ?, ?)`
   )
   statement.run(skillId, name, description, scope)
-  logger.info(`Registered skill: ${skillId} (scope: ${scope})`)
+  if (existing) {
+    logger.info(`Updated skill metadata: ${skillId} (scope: ${scope})`)
+  } else {
+    logger.info(`Registered skill: ${skillId} (scope: ${scope})`)
+  }
 }
 
 /**
