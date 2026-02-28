@@ -330,6 +330,7 @@ ${stepDescription}
 ## Instructions
 - Complete ONLY the task described above.
 - Be thorough but focused.
+- Use the same language as the user's goal description when writing your final answer.
 - Use existing artifacts first. If required information is already present, DO NOT call any tool.
 - Do NOT call \`list_skills\` or \`read_skill\` unless this step is explicitly about skill management.
 - If one tool result already gives enough data for this step, stop and produce the step result immediately.
@@ -345,17 +346,23 @@ function normalizeStepResult(raw: string): string {
     const evidence = parsed.evidence.slice(0, 5).map((e) => `- ${e}`).join('\n')
     const hints = parsed.criteriaHints.slice(0, 5).map((c) => `- ${c}`).join('\n')
     return [
-      `Summary: ${parsed.summary}`,
-      evidence ? `Evidence:\n${evidence}` : '',
-      hints ? `CriteriaHints:\n${hints}` : '',
-      `NeedsMoreTools: ${parsed.needsMoreTools ? 'true' : 'false'}`,
+      `摘要: ${parsed.summary}`,
+      evidence ? `依据:\n${evidence}` : '',
+      hints ? `达成提示:\n${hints}` : '',
+      `是否需要继续调用工具: ${parsed.needsMoreTools ? '是' : '否'}`,
     ]
       .filter(Boolean)
       .join('\n\n')
       .slice(0, 4000)
   }
 
-  return raw.slice(0, 4000)
+  return raw
+    .slice(0, 4000)
+    .replace(/^Summary:\s*/gim, '摘要: ')
+    .replace(/^Evidence:\s*/gim, '依据: ')
+    .replace(/^CriteriaHints:\s*/gim, '达成提示: ')
+    .replace(/^NeedsMoreTools:\s*false\s*$/gim, '是否需要继续调用工具: 否')
+    .replace(/^NeedsMoreTools:\s*true\s*$/gim, '是否需要继续调用工具: 是')
 }
 
 function parseStepResultBlock(raw: string): {
