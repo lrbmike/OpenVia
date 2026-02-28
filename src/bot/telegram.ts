@@ -129,23 +129,25 @@ export class TelegramChannel implements Channel {
           bridge.resolveRequest(id, 'allow')
           await ctx.answerCallbackQuery({ text: 'Allowed' })
           
-          const originalText = ctx.callbackQuery.message?.text || ''
-          const htmlText = formatMarkdownToHtml(originalText)
           try {
+              // 重新根据 originalText 生成 HTML，而不是试图从未定义属性读取
+              const originalText = ctx.callbackQuery.message?.text || ''
+              const htmlText = formatMarkdownToHtml(originalText)
               await ctx.editMessageText(`${htmlText}\n\n<b>(Allowed by ${escapeHtml(ctx.from.first_name)})</b>`, { parse_mode: 'HTML' })
           } catch (e) {
-               // Fallback if edit fails
+               const originalText = ctx.callbackQuery.message?.text || ''
                await ctx.editMessageText(`${originalText}\n\n(Allowed by ${ctx.from.first_name})`)
           }
       } else {
           bridge.resolveRequest(id, 'deny')
           await ctx.answerCallbackQuery({ text: 'Denied' })
           
-          const originalText = ctx.callbackQuery.message?.text || ''
-          const htmlText = formatMarkdownToHtml(originalText)
           try {
+             const originalText = ctx.callbackQuery.message?.text || ''
+             const htmlText = formatMarkdownToHtml(originalText)
              await ctx.editMessageText(`${htmlText}\n\n<b>(Denied by ${escapeHtml(ctx.from.first_name)})</b>`, { parse_mode: 'HTML' })
           } catch (e) {
+             const originalText = ctx.callbackQuery.message?.text || ''
              await ctx.editMessageText(`${originalText}\n\n(Denied by ${ctx.from.first_name})`)
           }
       }
@@ -299,21 +301,22 @@ export class TelegramChannel implements Channel {
       const userId = req.context.userId
       
       const keyboard = new InlineKeyboard()
-          .text('Allow', `perm:allow:${req.id}`)
-          .text('Deny', `perm:deny:${req.id}`)
+          .text('✅ Allow', `perm:allow:${req.id}`)
+          .text('❌ Deny', `perm:deny:${req.id}`)
 
       try {
+          // req.message contains markdown like ```bash\nbun run xxx```
           const htmlMessage = formatMarkdownToHtml(req.message)
-          await this.bot.api.sendMessage(userId, htmlMessage, {
+          await this.bot.api.sendMessage(userId, `<b>[Action Required]</b>\n\n${htmlMessage}`, {
               parse_mode: 'HTML',
               reply_markup: keyboard
           })
           logger.info(`Sent permission request ${req.id} to user ${userId}`)
       } catch (e) {
           logger.error(`Failed to send permission request to ${userId}`, e)
-          // Fallback to plain text if HTML fails
+          // Fallback to plain text if HTML fails (do not use formatMarkdownToHtml here)
           try {
-             await this.bot.api.sendMessage(userId, `Permission Request:\n${req.message}`, {
+             await this.bot.api.sendMessage(userId, `[Action Required]\n${req.message}`, {
                  reply_markup: keyboard
              })
           } catch (e2) {
