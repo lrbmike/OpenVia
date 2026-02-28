@@ -31,7 +31,6 @@ You are operating via OpenVia, a CLI gateway with access to:
 - read_file: Read file contents
 - write_file: Write content to file
 - edit_file: Edit file by replacing content
-- list_skills / read_skill: Access user-defined skills
 
 ## Rules
 1. Return valid JSON only. No other text.
@@ -154,8 +153,8 @@ function getDynamicSkillsContext(): string {
   try {
     const registry = getToolRegistry()
     const allTools = registry.getAll()
-    const coreToolNames = ['bash', 'read_file', 'write_file', 'edit_file', 'list_dir', 'search', 'notify_user']
-    const externalSkills = allTools.filter(t => !coreToolNames.includes(t.name))
+    const coreToolNames = ['bash', 'read_file', 'write_file', 'edit_file', 'list_dir', 'search', 'notify_user', 'list_skills', 'read_skill']
+    const externalSkills = allTools.filter(t => !coreToolNames.includes(t.name) && t.name !== 'find-skills')
     
     if (externalSkills.length === 0) return ''
     

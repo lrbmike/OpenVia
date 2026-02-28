@@ -123,8 +123,8 @@ export async function runGoalLoop(
 
     const plan = currentGoal.plan
 
-    // 执行当前计划的剩余步骤
-    while (plan.currentStepIndex < plan.steps.length && totalStepsExecuted < cfg.maxSteps) {
+    // 每次仅执行一个步骤，执行后立即进行评估（Early Evaluation 机制）
+    if (plan.currentStepIndex < plan.steps.length && totalStepsExecuted < cfg.maxSteps) {
       const stepIndex = plan.currentStepIndex
       const step = plan.steps[stepIndex]
       totalStepsExecuted++
@@ -173,7 +173,7 @@ export async function runGoalLoop(
               steps: newPlan.steps,
               currentStepIndex: 0,
             }
-            break // 跳出内层循环，用新计划重新开始
+            continue // 跳出当前步骤，用新计划进入下一轮
           } catch {
             logger.error('Replan failed, continuing with remaining steps')
           }
@@ -186,11 +186,18 @@ export async function runGoalLoop(
 
     // ── 4. 评估 ──
     const evalGoal = getGoal(goal.id)!
+    const allStepsDone = evalGoal.plan && evalGoal.plan.currentStepIndex >= evalGoal.plan.steps.length
+
     if (evalGoal.successCriteria.length === 0) {
-      // 无成功标准的情况下，计划执行完就算完成
-      await updateGoalStatus(goal.id, 'completed')
-      await sendReply('✅ **目标已完成**（所有步骤已执行）')
-      return { goalId: goal.id, completed: true, summary: 'All steps executed' }
+      if (allStepsDone) {
+        // 无成功标准的情况下，计划全执行完才算完成
+        await updateGoalStatus(goal.id, 'completed')
+        await sendReply('✅ **目标已完成**（所有步骤已执行）')
+        return { goalId: goal.id, completed: true, summary: 'All steps executed' }
+      } else {
+        // 还有步骤未执行，直接进入下一轮
+        continue
+      }
     }
 
     await sendReply('🔍 正在评估目标完成度...')
@@ -223,9 +230,6 @@ export async function runGoalLoop(
         .join('\n')
 
       // 检查是否还能继续
-      const allStepsDone = evalGoal.plan &&
-        evalGoal.plan.currentStepIndex >= evalGoal.plan.steps.length
-
       if (allStepsDone && replanCount >= cfg.maxReplans) {
         // 无法继续
         await updateGoalStatus(goal.id, 'blocked')
