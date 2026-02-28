@@ -36,14 +36,14 @@ function formatMarkdownToHtml(markdown: string): string {
     // Telegram supports <pre><code class="language-xyz">...</code></pre>
     const langAttr = lang ? ` class="language-${escapeHtml(lang)}"` : ''
     placeholders.push(`<pre><code${langAttr}>${escapeHtml(code)}</code></pre>`)
-    return `__CODE_BLOCK_${i}__`
+    return `@@@CODE_BLOCK_${i}@@@`
   })
 
   // 2. Protect Inline Code (single backticks)
   text = text.replace(/`([^`]+)`/g, (_, code) => {
     const i = placeholders.length
     placeholders.push(`<code>${escapeHtml(code)}</code>`)
-    return `__CODE_INLINE_${i}__`
+    return `@@@CODE_INLINE_${i}@@@`
   })
 
   // 3. Escape HTML for the Rest (Crucial step!)
@@ -81,10 +81,8 @@ function formatMarkdownToHtml(markdown: string): string {
   // 5. Restore Placeholders
   placeholders.forEach((val, i) => {
     // We must replace strictly.
-    // Since we escaped the text in step 3, our placeholders __CODE_...__ might have been escaped?
-    // No, underscores are not escaped by escapeHtml.
-    text = text.replace(`__CODE_BLOCK_${i}__`, val)
-    text = text.replace(`__CODE_INLINE_${i}__`, val)
+    text = text.replace(`@@@CODE_BLOCK_${i}@@@`, val)
+    text = text.replace(`@@@CODE_INLINE_${i}@@@`, val)
   })
 
   return text
