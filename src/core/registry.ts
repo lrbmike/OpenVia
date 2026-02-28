@@ -71,6 +71,13 @@ export class ToolRegistry {
       this.register(tool)
     }
   }
+
+  /**
+   * 鑾峰彇鎵€鏈夊凡娉ㄥ唽宸ュ叿
+   */
+  getAll(): ToolDefinition[] {
+    return Array.from(this.tools.values())
+  }
   
   /**
    * 鑾峰彇宸ュ叿瀹氫箟

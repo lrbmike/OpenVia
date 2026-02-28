@@ -116,7 +116,8 @@ export async function handleMessage(
           goalDescription,
           userId,
           requestContext,
-          [...session.history], // 传入历史副本
+          // 传入完全干净的仅包含当前触发指令的上下文，避免旧聊天/旧 Goal 污染新 Goal 测试
+          [{ role: 'user', content: input }],
         )
 
         // 记录目标 ID 到 session

@@ -15,6 +15,7 @@ import type { LLMAdapter } from '../llm/adapter'
 import type { Goal, PlanStep } from '../types/goal'
 import type { Message } from '../types'
 import { Logger } from '../utils/logger'
+import { getToolRegistry } from '../core/registry'
 
 const logger = new Logger('GoalPlanner')
 
@@ -34,7 +35,7 @@ You are operating via OpenVia, a CLI gateway with access to:
 
 ## Rules
 1. Return valid JSON only. No other text.
-2. Each step must be a concrete, executable action (not vague like "analyze data").
+2. Each step must be a concrete, executable action (not vague like "analyze data"). DO PREFER using provided skills over raw bash commands when applicable.
 3. Steps should be ordered by dependency - do prerequisites first.
 4. Each step's description should be clear enough that an AI agent can execute it with the available tools.
 5. Generate 2-8 steps. Avoid over-decomposition.
@@ -103,12 +104,16 @@ function buildPlannerUserMessage(goal: Goal): string {
     ? `## Constraints\n${goal.constraints.map(c => `- ${c}`).join('\n')}`
     : ''
 
+  const availableSkills = getDynamicSkillsContext()
+
   return `## Goal
 ${goal.description}
 
 ${criteriaSection}
 
 ${constraintsSection}
+
+${availableSkills}
 
 Please decompose this goal into actionable steps. Return JSON only.`
 }
@@ -124,6 +129,7 @@ function buildReplanUserMessage(
     .join('\n') || '(None)'
 
   const failedStep = goal.plan?.steps[failedStepIndex]
+  const availableSkills = getDynamicSkillsContext()
 
   return `## Goal
 ${goal.description}
@@ -138,7 +144,24 @@ ${completedSteps}
 - Step: ${failedStep?.description || 'Unknown'}
 - Reason: ${failureReason}
 
+${availableSkills}
+
 Please generate a new plan to complete the remaining criteria, considering the failure above. Return JSON only.`
+}
+
+function getDynamicSkillsContext(): string {
+  try {
+    const registry = getToolRegistry()
+    const allTools = registry.getAll()
+    const coreToolNames = ['bash', 'read_file', 'write_file', 'edit_file', 'list_dir', 'search', 'notify_user']
+    const externalSkills = allTools.filter(t => !coreToolNames.includes(t.name))
+    
+    if (externalSkills.length === 0) return ''
+    
+    return `## Available Extra Skills\nYou CAN and SHOULD heavily rely on the following available external skills to plan your steps. Refer to them by name:\n` + externalSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')
+  } catch (error) {
+    return ''
+  }
 }
 
 async function callLLMForText(

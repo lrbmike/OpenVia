@@ -6,6 +6,7 @@ import { PermissionBridge, PendingRequest } from '../utils/permission-bridge'
 import type { ContentBlock } from '../types/protocol'
 
 const logger = new Logger('FeishuChannel')
+const MAX_LARK_LENGTH = 15000 // safe margin for Lark interactive card limits
 
 /**
  * Convert standard Markdown to Lark Markdown (lark_md)
@@ -150,6 +151,21 @@ export class FeishuChannel implements Channel {
             const sendReply = async (replyText: string) => {
                 const mkContent = formatLarkMarkdown(replyText)
                 
+                // If it's too long, split and send multiple sequential replies
+                if (mkContent.length > MAX_LARK_LENGTH) {
+                    logger.info(`Message too long for single card (${mkContent.length} chars), splitting...`)
+                    let offset = 0
+                    while (offset < mkContent.length) {
+                        const chunk = mkContent.slice(offset, offset + MAX_LARK_LENGTH)
+                        await sendSingleCard(chunk)
+                        offset += MAX_LARK_LENGTH
+                    }
+                } else {
+                    await sendSingleCard(mkContent)
+                }
+            }
+
+            const sendSingleCard = async (mkContent: string) => {
                 const card = {
                     config: { wide_screen_mode: true },
                     elements: [
@@ -173,12 +189,13 @@ export class FeishuChannel implements Channel {
                     })
                 } catch (e) {
                     logger.error('Failed to send interactive card, falling back to text', e)
-                    // Fallback to plain text
+                    // Fallback to plain text gracefully
                     try {
+                        const rawText = mkContent.length > MAX_LARK_LENGTH ? mkContent.slice(0, MAX_LARK_LENGTH) : mkContent
                         await this.client.im.message.reply({
                             path: { message_id: messageId },
                             data: {
-                                content: JSON.stringify({ text: replyText }),
+                                content: JSON.stringify({ text: rawText }),
                                 msg_type: 'text'
                             }
                         })

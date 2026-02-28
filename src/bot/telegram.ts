@@ -338,8 +338,8 @@ export class TelegramChannel implements Channel {
             } else {
                  // Split splitting is complex with HTML tags. 
                  // Simple approach: Split raw text and format each part.
-                 // This might break code blocks across messages, but it's safer than splitting HTML.
-                 // Actually, splitting formatted HTML is hard.
+                 // This might break code blocks across messages.
+                 // So we just split conservatively.
                  // Let's split the RAW markdown validation.
                  
                 const lines = content.split('\n')
