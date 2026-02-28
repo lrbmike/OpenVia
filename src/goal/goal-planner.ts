@@ -15,7 +15,7 @@ import type { LLMAdapter } from '../llm/adapter'
 import type { Goal, PlanStep } from '../types/goal'
 import type { Message } from '../types'
 import { Logger } from '../utils/logger'
-import { getToolRegistry } from '../core/registry'
+import { loadSkills, getDefaultSkillsDir } from '../skills'
 
 const logger = new Logger('GoalPlanner')
 
@@ -41,6 +41,8 @@ You are operating via OpenVia, a CLI gateway with access to:
 6. DO NOT generate steps to "search for", "list", or "find" skills. The available skills are already given to you below. Use them directly!
 7. If the goal already has success criteria, generate steps that address ALL criteria.
 8. If no success criteria are provided, also generate appropriate criteria.
+9. NEVER add a preparatory step like "check if tools/skills exist" unless the user explicitly asked for environment diagnostics.
+10. For simple information tasks (weather/time/news/price), prefer 1-2 direct steps: fetch required data, then answer.
 
 ## Output Format
 {
@@ -72,7 +74,7 @@ export async function planGoal(
   llm: LLMAdapter,
   goal: Goal
 ): Promise<PlanResult> {
-  const userMessage = buildPlannerUserMessage(goal)
+  const userMessage = await buildPlannerUserMessage(goal)
   const responseText = await callLLMForText(llm, PLANNER_SYSTEM_PROMPT, userMessage)
   return parsePlannerResponse(responseText)
 }
@@ -86,7 +88,7 @@ export async function replanGoal(
   failedStepIndex: number,
   failureReason: string
 ): Promise<PlanResult> {
-  const userMessage = buildReplanUserMessage(goal, failedStepIndex, failureReason)
+  const userMessage = await buildReplanUserMessage(goal, failedStepIndex, failureReason)
   const responseText = await callLLMForText(llm, PLANNER_SYSTEM_PROMPT, userMessage)
   return parsePlannerResponse(responseText)
 }
@@ -95,7 +97,7 @@ export async function replanGoal(
 // 内部实现
 // ============================================================================
 
-function buildPlannerUserMessage(goal: Goal): string {
+async function buildPlannerUserMessage(goal: Goal): Promise<string> {
   const criteriaSection = goal.successCriteria.length > 0
     ? `## Existing Success Criteria\n${goal.successCriteria.map(c => `- ${c.description}`).join('\n')}`
     : '## Success Criteria\n(Not specified - please generate appropriate criteria)'
@@ -104,7 +106,7 @@ function buildPlannerUserMessage(goal: Goal): string {
     ? `## Constraints\n${goal.constraints.map(c => `- ${c}`).join('\n')}`
     : ''
 
-  const availableSkills = getDynamicSkillsContext()
+  const availableSkills = await getDynamicSkillsContext()
 
   return `## Goal
 ${goal.description}
@@ -118,18 +120,18 @@ ${availableSkills}
 Please decompose this goal into actionable steps. Return JSON only.`
 }
 
-function buildReplanUserMessage(
+async function buildReplanUserMessage(
   goal: Goal,
   failedStepIndex: number,
   failureReason: string
-): string {
+): Promise<string> {
   const completedSteps = goal.plan?.steps
     .filter(s => s.status === 'completed')
     .map(s => `- [DONE] ${s.description}${s.result ? ': ' + s.result : ''}`)
     .join('\n') || '(None)'
 
   const failedStep = goal.plan?.steps[failedStepIndex]
-  const availableSkills = getDynamicSkillsContext()
+  const availableSkills = await getDynamicSkillsContext()
 
   return `## Goal
 ${goal.description}
@@ -149,17 +151,18 @@ ${availableSkills}
 Please generate a new plan to complete the remaining criteria, considering the failure above. Return JSON only.`
 }
 
-function getDynamicSkillsContext(): string {
+async function getDynamicSkillsContext(): Promise<string> {
   try {
-    const registry = getToolRegistry()
-    const allTools = registry.getAll()
-    const coreToolNames = ['bash', 'read_file', 'write_file', 'edit_file', 'list_dir', 'search', 'notify_user', 'list_skills', 'read_skill']
-    const externalSkills = allTools.filter(t => !coreToolNames.includes(t.name) && t.name !== 'find-skills')
-    
-    if (externalSkills.length === 0) return ''
-    
-    return `## Available Extra Skills\nYou CAN and SHOULD heavily rely on the following available external skills to plan your steps. Refer to them by name:\n` + externalSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')
-  } catch (error) {
+    const skillsDir = getDefaultSkillsDir()
+    const { skills } = await loadSkills(skillsDir)
+    const visibleSkills = skills.filter((s) => s.id !== 'find-skills')
+
+    if (visibleSkills.length === 0) return ''
+
+    return `## Available Skills
+You can directly rely on these installed skills and MUST NOT create a separate "tool checking" step:
+${visibleSkills.map((s) => `- ${s.id}: ${s.metadata.description || s.metadata.name}`).join('\n')}`
+  } catch {
     return ''
   }
 }

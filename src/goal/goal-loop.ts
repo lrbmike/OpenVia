@@ -13,7 +13,7 @@
 import type { LLMAdapter } from '../llm/adapter'
 import type { Goal } from '../types/goal'
 import type { Message } from '../types'
-import { createGoal, getGoal, updateGoalStatus, addArtifact, setSuccessCriteria } from './goal-manager'
+import { createGoal, getGoal, updateGoalStatus, addArtifact, setSuccessCriteria, applyCriteriaUpdate } from './goal-manager'
 import { evaluateGoal } from './goal-evaluator'
 import { planGoal, replanGoal } from './goal-planner'
 import { callAgent } from '../ai/agent-client'
@@ -134,28 +134,39 @@ export async function runGoalLoop(
 
       // 复用现有 callAgent 执行步骤，传入 currentGoal.id 参数以便只加载对应的 Task-Scoped Skills
       const stepInstruction = buildStepInstruction(step.description, currentGoal)
+      const lowerStep = step.description.toLowerCase()
+      const isSkillManagementStep =
+        lowerStep.includes('skill') ||
+        lowerStep.includes('技能') ||
+        lowerStep.includes('capability') ||
+        lowerStep.includes('能力')
+      const runtimeOptions = isSkillManagementStep
+        ? { maxIterations: 8 }
+        : { deniedTools: ['list_skills', 'read_skill'], maxIterations: 6 }
       const stepResult = await callAgent(
         stepInstruction,
         { history },
         requestContext,
-        currentGoal.id
+        currentGoal.id,
+        runtimeOptions
       )
 
       if (stepResult.action === 'reply' && stepResult.message) {
+        const normalizedStepResult = normalizeStepResult(stepResult.message)
         step.status = 'completed'
-        step.result = stepResult.message
+        step.result = normalizedStepResult
 
         // 将步骤输出作为 artifact 记录
         addArtifact(goal.id, {
           name: `step_${stepIndex + 1}_result`,
           description: `步骤 "${step.description}" 的执行结果`,
-          content: stepResult.message,
+          content: normalizedStepResult,
         })
 
         // 将步骤结果添加到历史（供后续步骤参考）
         history.push(
           { role: 'user', content: stepInstruction },
-          { role: 'assistant', content: stepResult.message }
+          { role: 'assistant', content: normalizedStepResult }
         )
       } else {
         step.status = 'failed'
@@ -204,6 +215,11 @@ export async function runGoalLoop(
 
     try {
       const evalResult = await evaluateGoal(llm, { goal: evalGoal })
+      applyCriteriaUpdate(
+        goal.id,
+        evalResult.satisfied.map((c) => c.id),
+        evalResult.missing.map((c) => c.id)
+      )
 
       if (evalResult.completed) {
         await updateGoalStatus(goal.id, 'completed')
@@ -293,7 +309,13 @@ function buildStepInstruction(stepDescription: string, goal: Goal): string {
   // 把已经产出的数据发给接下来的步骤
   let artifactsContext = ''
   if (goal.artifacts && goal.artifacts.length > 0) {
-    const arts = goal.artifacts.map(a => `### ${a.name} (${a.description})\n${a.content}`).join('\n\n')
+    const recentArtifacts = goal.artifacts.slice(-3)
+    const arts = recentArtifacts
+      .map((a) => {
+        const content = a.content.length > 2000 ? `${a.content.slice(0, 2000)}...(truncated)` : a.content
+        return `### ${a.name} (${a.description})\n${content}`
+      })
+      .join('\n\n')
     artifactsContext = `\n## Previous Steps Artifacts\nYou can USE the following information gathered from previous steps to complete your task:\n${arts}\n`
   }
 
@@ -308,6 +330,60 @@ ${stepDescription}
 ## Instructions
 - Complete ONLY the task described above.
 - Be thorough but focused.
+- Use existing artifacts first. If required information is already present, DO NOT call any tool.
+- Do NOT call \`list_skills\` or \`read_skill\` unless this step is explicitly about skill management.
+- If one tool result already gives enough data for this step, stop and produce the step result immediately.
 - If you produce any output or files, include the key content in your response.
-- Report what you accomplished.`
+- Report what you accomplished.
+- At the end, include a fenced block \`\`\`goal_step_result ... \`\`\` with JSON:
+  {"summary":"...", "evidence":["..."], "criteriaHints":["..."], "needsMoreTools": false}`
+}
+
+function normalizeStepResult(raw: string): string {
+  const parsed = parseStepResultBlock(raw)
+  if (parsed) {
+    const evidence = parsed.evidence.slice(0, 5).map((e) => `- ${e}`).join('\n')
+    const hints = parsed.criteriaHints.slice(0, 5).map((c) => `- ${c}`).join('\n')
+    return [
+      `Summary: ${parsed.summary}`,
+      evidence ? `Evidence:\n${evidence}` : '',
+      hints ? `CriteriaHints:\n${hints}` : '',
+      `NeedsMoreTools: ${parsed.needsMoreTools ? 'true' : 'false'}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, 4000)
+  }
+
+  return raw.slice(0, 4000)
+}
+
+function parseStepResultBlock(raw: string): {
+  summary: string
+  evidence: string[]
+  criteriaHints: string[]
+  needsMoreTools: boolean
+} | null {
+  const match = raw.match(/```goal_step_result\s*([\s\S]*?)```/i)
+  if (!match) return null
+
+  try {
+    const parsed = JSON.parse(match[1].trim()) as {
+      summary?: unknown
+      evidence?: unknown
+      criteriaHints?: unknown
+      needsMoreTools?: unknown
+    }
+    const summary = typeof parsed.summary === 'string' ? parsed.summary : ''
+    const evidence = Array.isArray(parsed.evidence) ? parsed.evidence.filter((x): x is string => typeof x === 'string') : []
+    const criteriaHints = Array.isArray(parsed.criteriaHints)
+      ? parsed.criteriaHints.filter((x): x is string => typeof x === 'string')
+      : []
+    const needsMoreTools = typeof parsed.needsMoreTools === 'boolean' ? parsed.needsMoreTools : false
+
+    if (!summary) return null
+    return { summary, evidence, criteriaHints, needsMoreTools }
+  } catch {
+    return null
+  }
 }

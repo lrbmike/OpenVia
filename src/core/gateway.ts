@@ -43,6 +43,7 @@ export interface AgentInput {
   session: SessionContext
   systemPrompt?: string
   onPermissionRequest?: (prompt: string) => Promise<boolean>
+  maxIterations?: number
 }
 
 /** Agent configuration */
@@ -92,10 +93,14 @@ export class AgentGateway {
     // Get tool schemas
     const tools = this.registry.getSchemas()
     
-    // Message history (prefer upstream conversation history)
-    const messages: Message[] = history && history.length > 0
-      ? [...history]
-      : [{ role: 'user', content: message }]
+    // Message history:
+    // - Keep upstream history
+    // - Ensure current user input is present (avoid dropping step instruction in GoalLoop)
+    const messages: Message[] = history && history.length > 0 ? [...history] : []
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'user' || !isSameContent(last.content, message)) {
+      messages.push({ role: 'user', content: message })
+    }
     
     // Full response accumulator
     let fullResponse = ''
@@ -103,11 +108,14 @@ export class AgentGateway {
     // Previous round tool results (persisted across iterations)
     let lastToolResults: LLMToolResult[] = []
     let previousResponseId: string | undefined
+    const successfulToolCallCounts = new Map<string, number>()
+    const MAX_IDENTICAL_CALLS_AFTER_SUCCESS = 1
+    const maxIterations = input.maxIterations ?? this.config.maxIterations!
     
     // Iterative processing (supports multi-round tool calls)
-    for (let iteration = 0; iteration < this.config.maxIterations!; iteration++) {
-      const remaining = this.config.maxIterations! - iteration - 1
-      logger.info(`[Gateway] Iteration ${iteration + 1}/${this.config.maxIterations} (${remaining} remaining)`)
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const remaining = maxIterations - iteration - 1
+      logger.info(`[Gateway] Iteration ${iteration + 1}/${maxIterations} (${remaining} remaining)`)
       logger.info(`[Gateway] Calling LLM with ${messages.length} messages...`)
       
       // Collect current round tool calls
@@ -183,8 +191,31 @@ export class AgentGateway {
       
       // Collect tool results
       const toolResultsForNextRound: LLMToolResult[] = []
+      const seenInCurrentRound = new Set<string>()
       
       for (const tc of pendingToolCalls) {
+        const fp = buildToolFingerprint(tc.name, tc.args)
+        const successCount = successfulToolCallCounts.get(fp) || 0
+
+        if (seenInCurrentRound.has(fp) || successCount > MAX_IDENTICAL_CALLS_AFTER_SUCCESS) {
+          const result: ToolResult = {
+            success: false,
+            error: `Duplicate tool call blocked for "${tc.name}". Reuse previous result and provide the answer.`,
+          }
+          logger.warn(`[Gateway] Blocked duplicate tool call: ${fp}`)
+          yield { type: 'tool_result', id: tc.id, name: tc.name, result }
+          toolResultsForNextRound.push({
+            toolCallId: tc.id,
+            toolName: tc.name,
+            toolArgs: tc.args,
+            toolCallMeta: tc.meta,
+            content: JSON.stringify(result),
+            isError: true
+          })
+          continue
+        }
+        seenInCurrentRound.add(fp)
+
         yield { type: 'tool_start', id: tc.id, name: tc.name, args: tc.args }
         
         // Get tool definition
@@ -264,6 +295,10 @@ export class AgentGateway {
           content: JSON.stringify(result),
           isError: !result.success
         })
+
+        if (result.success) {
+          successfulToolCallCounts.set(fp, successCount + 1)
+        }
       }
       
       // Save for next round
@@ -271,7 +306,29 @@ export class AgentGateway {
     }
     
     // Max iterations exceeded
-    logger.warn(`[Gateway] Max iterations (${this.config.maxIterations}) reached, stopping`)
-    yield { type: 'error', message: `Max iterations (${this.config.maxIterations}) reached. Task may be incomplete.` }
+    logger.warn(`[Gateway] Max iterations (${maxIterations}) reached, stopping`)
+    yield { type: 'error', message: `Max iterations (${maxIterations}) reached. Task may be incomplete.` }
   }
+}
+
+function isSameContent(a: Message['content'], b: Message['content']): boolean {
+  if (typeof a === 'string' && typeof b === 'string') return a === b
+  try {
+    return JSON.stringify(a) === JSON.stringify(b)
+  } catch {
+    return false
+  }
+}
+
+function buildToolFingerprint(name: string, args: unknown): string {
+  return `${name}:${stableStringify(args)}`
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return String(value)
+  if (typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj).sort()
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`
 }

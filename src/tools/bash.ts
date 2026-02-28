@@ -15,7 +15,7 @@ const logger = new Logger('Tool:Bash')
 /** Input schema */
 const inputSchema = z.object({
   command: z.string().describe('The shell command to execute'),
-  timeout: z.coerce.number().optional().describe('Timeout in milliseconds (default: 30000)')
+  timeout: z.coerce.number().optional().describe('Timeout in milliseconds (default: 60000)')
 })
 
 /** Bash tool definition */
@@ -31,7 +31,7 @@ export const bashTool: ToolDefinition = {
     }
     
     // 提取所需数据
-    const { timeout = 30000 } = parsed.data
+    const { timeout = 60000 } = parsed.data
     let { command } = parsed.data
     
     // Auto-resolve home directory shortcuts across platforms before handing off to exec()
@@ -42,11 +42,11 @@ export const bashTool: ToolDefinition = {
     // Normalize Windows shortcuts and potential backslash pollution in the resulting path
     command = command.replace(/\$env:USERPROFILE[\\/]/gi, `${homeDir}/`)
     command = command.replace(/\$HOME[\\/]/gi, `${homeDir}/`)
+    command = command.replace(/%USERPROFILE%[\\/]/gi, `${homeDir}/`)
     
-    // Convert stray backslashes in .openvia related path-like strings to forward slashes
-    if (os.platform() !== 'win32') {
-      command = command.replace(/(?<=\.openvia)[^\s"']+/gi, match => match.replace(/\\/g, '/'))
-    }
+    // Convert mixed separators in any .openvia path segment to forward slashes.
+    // Example: D:/Users/foo/.openvia\skills\fetch\scripts\fetch.ts -> D:/Users/foo/.openvia/skills/fetch/scripts/fetch.ts
+    command = command.replace(/[^\s"'`]*\.openvia[^\s"'`]*/gi, (match) => match.replace(/\\/g, '/'))
     
     try {
       logger.info(`[Bash] Executing: ${command.slice(0, 100)}...`)

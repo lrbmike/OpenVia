@@ -41,6 +41,12 @@ export interface RequestContext {
   sendReply: (text: string) => Promise<void>
 }
 
+export interface AgentRuntimeOptions {
+  allowedTools?: string[]
+  deniedTools?: string[]
+  maxIterations?: number
+}
+
 // ============================================================================
 // 全局状态
 // ============================================================================
@@ -156,7 +162,8 @@ export async function callAgent(
   message: string | ContentBlock[],
   context: { history: Message[] },
   requestContext: RequestContext,
-  activeGoalId?: string
+  activeGoalId?: string,
+  runtimeOptions?: AgentRuntimeOptions
 ): Promise<{ action: 'reply' | 'error'; message?: string }> {
   if (!agentGateway) {
     return { action: 'error', message: 'Agent not initialized' }
@@ -200,10 +207,10 @@ export async function callAgent(
         skillsPrompt = formatSkillsForPrompt(visibleSkills)
       } else {
         const skillsList = visibleSkills.map(s => 
-          `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
+          `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''} (path: ${s.path.replace(/\\/g, '/')})`
         ).join('\n')
         
-        skillsPrompt = `\n## Available Skills (Context: ${activeGoalId ? 'Goal-' + activeGoalId.slice(0,6) : 'Chat'})\n\nYou have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.\n\n${skillsList}\n`
+        skillsPrompt = `\n## Available Skills (Context: ${activeGoalId ? 'Goal-' + activeGoalId.slice(0,6) : 'Chat'})\n\nYou have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.\n\nPath rule for bash calls: always use forward slashes in script paths and quote full path.\n\n${skillsList}\n`
       }
       currentSystemPrompt += '\n' + skillsPrompt
     }
@@ -231,9 +238,15 @@ export async function callAgent(
     for await (const event of agentGateway.handleMessage({
       message,
       history: context.history,
-      session: { userId, chatId: channelId },
+      session: {
+        userId,
+        chatId: channelId,
+        allowedTools: runtimeOptions?.allowedTools,
+        deniedTools: runtimeOptions?.deniedTools,
+      },
       systemPrompt: currentSystemPrompt,
-      onPermissionRequest
+      onPermissionRequest,
+      maxIterations: runtimeOptions?.maxIterations
     })) {
       switch (event.type) {
         case 'text_delta':

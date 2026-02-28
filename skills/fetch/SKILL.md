@@ -16,13 +16,13 @@ and fetch data from the web or REST APIs. **Always use this skill INSTEAD OF
 
 Use the `bash` tool to run the fetch script.
 
-### Basic GET Request
+### Basic GET Request (cross-platform safe)
 
 ```bash
-bun run "$env:USERPROFILE\.openvia\skills\fetch\scripts\fetch.ts" "https://api.github.com/users/octocat"
+bun run "$HOME/.openvia/skills/fetch/scripts/fetch.ts" "https://api.github.com/users/octocat"
 ```
 
-_(On Linux/macOS, use `$HOME` instead of `$env:USERPROFILE`)_
+_On Windows PowerShell, `$HOME` usually resolves to your user directory. If needed, use `$env:USERPROFILE/.openvia/...` with forward slashes._
 
 ### Advanced Requests (Method, Headers, Body)
 
@@ -30,8 +30,13 @@ You can pass a JSON string as the second argument to specify options like
 method, headers, and body.
 
 ```bash
-bun run "$env:USERPROFILE\.openvia\skills\fetch\scripts\fetch.ts" "https://jsonplaceholder.typicode.com/posts" '{"method":"POST","headers":{"Content-Type":"application/json"},"body":"{\\"title\\":\\"foo\\",\\"body\\":\\"bar\\",\\"userId\\":1}"}'
+bun run "$HOME/.openvia/skills/fetch/scripts/fetch.ts" "https://jsonplaceholder.typicode.com/posts" '{"method":"POST","headers":{"Content-Type":"application/json"},"body":"{\\"title\\":\\"foo\\",\\"body\\":\\"bar\\",\\"userId\\":1}"}'
 ```
+
+## Path Rule (Important)
+
+- Always prefer forward slashes (`/`) in script paths, even on Windows.
+- Always quote full script paths.
 
 ## When to use
 

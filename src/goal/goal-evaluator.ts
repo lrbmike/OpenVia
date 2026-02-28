@@ -35,6 +35,7 @@ const EVALUATOR_SYSTEM_PROMPT = `You are a goal completion evaluator. Your ONLY 
 5. A criterion is "satisfied" ONLY if the artifacts clearly and sufficiently address it.
 6. Do NOT be overly optimistic - when in doubt, mark as missing.
 7. Artifact names alone are NOT sufficient - you must consider whether the content meaningfully addresses the criterion.
+8. Prioritize the most recent artifacts first; use older artifacts as supplementary evidence.
 
 ## Output Format
 Return EXACTLY this JSON structure:
@@ -101,10 +102,14 @@ function buildEvaluatorUserMessage(goal: Goal): string {
     .map((c) => `- [${c.id}] ${c.description}`)
     .join('\n')
 
+  const artifacts = goal.artifacts.slice(-6)
   const artifactsList =
-    goal.artifacts.length > 0
-      ? goal.artifacts
-          .map((a) => `### ${a.name}\n${a.description}\n\`\`\`\n${a.content}\n\`\`\``)
+    artifacts.length > 0
+      ? artifacts
+          .map((a, idx) => {
+            const content = a.content.length > 2500 ? `${a.content.slice(0, 2500)}...(truncated)` : a.content
+            return `### Artifact ${idx + 1}/${artifacts.length}: ${a.name}\n${a.description}\n\`\`\`\n${content}\n\`\`\``
+          })
           .join('\n\n')
       : '(No artifacts available)'
 

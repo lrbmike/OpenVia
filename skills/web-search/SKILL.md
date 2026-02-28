@@ -22,25 +22,28 @@ topic.
 
 Execute the search script using `bun`:
 
-**Linux / macOS:**
+**Cross-platform safe form (recommended):**
 
 ```bash
-bun run ~/.openvia/skills/web-search/scripts/search.ts "<query>"
+bun run "$HOME/.openvia/skills/web-search/scripts/search.ts" "<query>"
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell alternative):**
 
 ```powershell
-bun run "$HOME\.openvia\skills\web-search\scripts\search.ts" "<query>"
-# If $HOME fails, use:
-# bun run "$env:USERPROFILE\.openvia\skills\web-search\scripts\search.ts" "<query>"
+bun run "$env:USERPROFILE/.openvia/skills/web-search/scripts/search.ts" "<query>"
 ```
 
 **Example:**
 
 ```bash
-bun run "~/.openvia/skills/web-search/scripts/search.ts" "Bun 1.2 release notes"
+bun run "$HOME/.openvia/skills/web-search/scripts/search.ts" "Bun 1.2 release notes"
 ```
+
+## Path Rule (Important)
+
+- Always use forward slashes in script paths.
+- Always quote full script paths.
 
 ## Configuration
 

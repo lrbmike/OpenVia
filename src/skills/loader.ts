@@ -257,6 +257,9 @@ export function formatSkillsForPrompt(skills: LoadedSkill[]): string {
     if (skill.metadata.description) {
       parts.push(`> ${skill.metadata.description}`)
     }
+    parts.push(`> Skill ID: ${skill.id}`)
+    parts.push(`> Skill Root Path (canonical): ${skill.path.replace(/\\/g, '/')}`)
+    parts.push('> Path rule: when calling bash with skill scripts, always use forward slashes and quote full path.')
     parts.push('')
     parts.push(skill.instructions)
     parts.push('')

@@ -58,6 +58,9 @@ export const readSkillTool: ToolDefinition = {
       const content = [
         `# ${skill.metadata.name}`,
         skill.metadata.description ? `> ${skill.metadata.description}` : '',
+        `> Skill ID: ${skill.id}`,
+        `> Skill Root Path (canonical): ${skill.path.replace(/\\/g, '/')}`,
+        '> Path rule: when using bash, always use forward slashes in script paths and quote full path.',
         '',
         skill.instructions
       ].filter(Boolean).join('\n')
@@ -105,7 +108,7 @@ export const listSkillsTool: ToolDefinition = {
       logger.info(`Listing ${cachedSkills.length} available skills`)
       
       const skillList = cachedSkills.map(s => 
-        `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
+        `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''} (path: ${s.path.replace(/\\/g, '/')})`
       ).join('\n')
       
       return { 
