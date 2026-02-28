@@ -127,7 +127,16 @@ export async function initAgentClient(
   
   // 4. 创建 Agent Gateway
   agentGateway = new AgentGateway(llmAdapter, toolRegistry, policyEngine, {
-    maxIterations: config.llm.maxIterations || 10
+    maxIterations: config.llm.maxIterations || 10,
+    duplicateCallSuccessLimit: config.llm.duplicateCallSuccessLimit,
+    duplicateCallFailureLimit: config.llm.duplicateCallFailureLimit,
+    bashClassFailureThreshold: config.llm.bashClassFailureThreshold,
+    bashClassAbortThreshold: config.llm.bashClassAbortThreshold,
+    enableExperienceEvents: config.llm.enableExperienceEvents,
+    autoPromoteExperienceRules: config.llm.autoPromoteExperienceRules,
+    autoPromoteScope: config.llm.autoPromoteScope,
+    autoPromoteThreshold: config.llm.autoPromoteThreshold,
+    autoPromoteWindowMinutes: config.llm.autoPromoteWindowMinutes,
   })
   logger.info(`Agent Gateway created (maxIterations: ${config.llm.maxIterations || 10})`)
   

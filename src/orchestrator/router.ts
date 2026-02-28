@@ -12,6 +12,7 @@ import { isUserAllowed, logAudit } from './policy'
 import { Logger } from '../utils/logger'
 import { runWithContext } from '../utils/context'
 import { runGoalLoop } from '../goal/goal-loop'
+import type { GoalLoopConfig } from '../goal/goal-loop'
 
 const logger = new Logger('Router')
 
@@ -19,12 +20,14 @@ export interface RouterConfig {
   workDir: string
   maxSteps: number // Deprecated but kept for type compatibility
   timeout: number
+  goalLoop?: Partial<GoalLoopConfig>
 }
 
 let routerConfig: RouterConfig = {
   workDir: '.openvia',
   maxSteps: 5,
   timeout: 120000,
+  goalLoop: undefined,
 }
 
 /** Initialize router configuration */
@@ -118,6 +121,7 @@ export async function handleMessage(
           requestContext,
           // 传入完全干净的仅包含当前触发指令的上下文，避免旧聊天/旧 Goal 污染新 Goal 测试
           [{ role: 'user', content: input }],
+          routerConfig.goalLoop
         )
 
         // 记录目标 ID 到 session

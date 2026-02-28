@@ -17,6 +17,7 @@ import type { ToolRegistry, ToolResult, ExecutionContext } from './registry'
 import type { PolicyEngine, SessionContext } from './policy'
 import { ToolExecutor } from './executor'
 import { Logger } from '../utils/logger'
+import { autoPromoteExperienceRule, recordExperienceEvent } from '../skills/registry'
 
 const logger = new Logger('Gateway')
 
@@ -49,6 +50,15 @@ export interface AgentInput {
 /** Agent configuration */
 export interface AgentGatewayConfig {
   maxIterations?: number  // Max tool call iterations
+  duplicateCallSuccessLimit?: number
+  duplicateCallFailureLimit?: number
+  bashClassFailureThreshold?: number
+  bashClassAbortThreshold?: number
+  enableExperienceEvents?: boolean
+  autoPromoteExperienceRules?: boolean
+  autoPromoteScope?: 'global' | 'user'
+  autoPromoteThreshold?: number
+  autoPromoteWindowMinutes?: number
 }
 
 // ============================================================================
@@ -73,7 +83,16 @@ export class AgentGateway {
     this.policy = policy
     this.executor = new ToolExecutor(registry)
     this.config = {
-      maxIterations: config.maxIterations || 10
+      maxIterations: config.maxIterations || 10,
+      duplicateCallSuccessLimit: config.duplicateCallSuccessLimit ?? 1,
+      duplicateCallFailureLimit: config.duplicateCallFailureLimit ?? 1,
+      bashClassFailureThreshold: config.bashClassFailureThreshold ?? 2,
+      bashClassAbortThreshold: config.bashClassAbortThreshold ?? 2,
+      enableExperienceEvents: config.enableExperienceEvents ?? true,
+      autoPromoteExperienceRules: config.autoPromoteExperienceRules ?? true,
+      autoPromoteScope: config.autoPromoteScope ?? 'global',
+      autoPromoteThreshold: config.autoPromoteThreshold ?? 3,
+      autoPromoteWindowMinutes: config.autoPromoteWindowMinutes ?? 120,
     }
   }
   
@@ -109,7 +128,13 @@ export class AgentGateway {
     let lastToolResults: LLMToolResult[] = []
     let previousResponseId: string | undefined
     const successfulToolCallCounts = new Map<string, number>()
-    const MAX_IDENTICAL_CALLS_AFTER_SUCCESS = 1
+    const failedToolCallCounts = new Map<string, number>()
+    const bashClassFailureCounts = new Map<string, number>()
+    const bashClassBlockCounts = new Map<string, number>()
+    const maxIdenticalCallsAfterSuccess = this.config.duplicateCallSuccessLimit ?? 1
+    const maxIdenticalCallsAfterFailure = this.config.duplicateCallFailureLimit ?? 1
+    const bashClassFailureThreshold = this.config.bashClassFailureThreshold ?? 2
+    const maxBashClassBlocksBeforeAbort = this.config.bashClassAbortThreshold ?? 2
     const maxIterations = input.maxIterations ?? this.config.maxIterations!
     
     // Iterative processing (supports multi-round tool calls)
@@ -196,13 +221,87 @@ export class AgentGateway {
       for (const tc of pendingToolCalls) {
         const fp = buildToolFingerprint(tc.name, tc.args)
         const successCount = successfulToolCallCounts.get(fp) || 0
+        const failureCount = failedToolCallCounts.get(fp) || 0
+        const bashClass = tc.name === 'bash' ? classifyBashCommand(tc.args) : null
 
-        if (seenInCurrentRound.has(fp) || successCount > MAX_IDENTICAL_CALLS_AFTER_SUCCESS) {
+        if (bashClass) {
+          const classFailures = bashClassFailureCounts.get(bashClass) || 0
+          if (classFailures >= bashClassFailureThreshold) {
+            const blockCount = (bashClassBlockCounts.get(bashClass) || 0) + 1
+            bashClassBlockCounts.set(bashClass, blockCount)
+
+            const result: ToolResult = {
+              success: false,
+              error: `Loop guard: repeated local environment probing detected (${bashClass}). Stop probing and proceed with remote execution plan or external-run instructions.`,
+            }
+            logger.warn(`[Gateway] Blocked bash class ${bashClass} after repeated failures`)
+            this.recordExperience(
+              'loop_guard_blocked',
+              inferEventScene(tc.name, tc.args),
+              bashClass,
+              {
+                tool: tc.name,
+                args: tc.args,
+                fingerprint: fp,
+                classFailures,
+                blockCount,
+              },
+              false,
+              session.userId
+            )
+            yield { type: 'tool_result', id: tc.id, name: tc.name, result }
+            toolResultsForNextRound.push({
+              toolCallId: tc.id,
+              toolName: tc.name,
+              toolArgs: tc.args,
+              toolCallMeta: tc.meta,
+              content: JSON.stringify(result),
+              isError: true
+            })
+
+            if (blockCount >= maxBashClassBlocksBeforeAbort) {
+              this.recordExperience(
+                'loop_abort',
+                inferEventScene(tc.name, tc.args),
+                bashClass,
+                { reason: 'bash_class_block_threshold', blockCount, fingerprint: fp },
+                false,
+                session.userId
+              )
+              yield {
+                type: 'error',
+                message: `Loop detected: repeated "${bashClass}" probe calls. Task should switch strategy.`
+              }
+              return
+            }
+            continue
+          }
+        }
+
+        if (
+          seenInCurrentRound.has(fp) ||
+          successCount > maxIdenticalCallsAfterSuccess ||
+          failureCount > maxIdenticalCallsAfterFailure
+        ) {
           const result: ToolResult = {
             success: false,
-            error: `Duplicate tool call blocked for "${tc.name}". Reuse previous result and provide the answer.`,
+            error: `Duplicate tool call blocked for "${tc.name}". Reuse previous result and switch strategy.`,
           }
           logger.warn(`[Gateway] Blocked duplicate tool call: ${fp}`)
+          this.recordExperience(
+            'duplicate_tool_call_blocked',
+            inferEventScene(tc.name, tc.args),
+            tc.name,
+            {
+              tool: tc.name,
+              args: tc.args,
+              fingerprint: fp,
+              successCount,
+              failureCount,
+            },
+            false,
+            session.userId
+          )
           yield { type: 'tool_result', id: tc.id, name: tc.name, result }
           toolResultsForNextRound.push({
             toolCallId: tc.id,
@@ -298,6 +397,24 @@ export class AgentGateway {
 
         if (result.success) {
           successfulToolCallCounts.set(fp, successCount + 1)
+        } else {
+          failedToolCallCounts.set(fp, failureCount + 1)
+          this.recordExperience(
+            'tool_call_failed',
+            inferEventScene(tc.name, tc.args),
+            tc.name,
+            {
+              tool: tc.name,
+              args: tc.args,
+              fingerprint: fp,
+              error: result.error || '',
+            },
+            false,
+            session.userId
+          )
+          if (bashClass && isMeaningfulBashClassFailure(bashClass, result)) {
+            bashClassFailureCounts.set(bashClass, (bashClassFailureCounts.get(bashClass) || 0) + 1)
+          }
         }
       }
       
@@ -307,7 +424,54 @@ export class AgentGateway {
     
     // Max iterations exceeded
     logger.warn(`[Gateway] Max iterations (${maxIterations}) reached, stopping`)
+    this.recordExperience(
+      'max_iterations_reached',
+      'general',
+      'max_iterations',
+      { maxIterations, messagePreview: truncatePreview(String(message), 200) },
+      false,
+      session.userId
+    )
     yield { type: 'error', message: `Max iterations (${maxIterations}) reached. Task may be incomplete.` }
+  }
+
+  private recordExperience(
+    eventType: string,
+    scene: string,
+    signal: string,
+    payload: unknown,
+    success: boolean,
+    userId: string
+  ): void {
+    if (!this.config.enableExperienceEvents) return
+    try {
+      recordExperienceEvent({
+        eventType,
+        scene,
+        signal,
+        payload,
+        success,
+        userId,
+      })
+
+      const promoted = autoPromoteExperienceRule({
+        enabled: this.config.autoPromoteExperienceRules,
+        scopeType: this.config.autoPromoteScope,
+        threshold: this.config.autoPromoteThreshold,
+        windowMinutes: this.config.autoPromoteWindowMinutes,
+        eventType,
+        scene,
+        signal,
+        userId,
+      })
+      if (promoted.promoted) {
+        logger.info(
+          `[Gateway] Auto-promoted experience rule from event=${eventType}, scene=${scene}, signal=${signal}, count=${promoted.recentCount}, ruleId=${promoted.ruleId}`
+        )
+      }
+    } catch (error) {
+      logger.debug(`[Gateway] Failed to record experience event: ${error}`)
+    }
   }
 }
 
@@ -331,4 +495,80 @@ function stableStringify(value: unknown): string {
   const obj = value as Record<string, unknown>
   const keys = Object.keys(obj).sort()
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`
+}
+
+function classifyBashCommand(args: unknown): string | null {
+  const command = extractCommandFromArgs(args).toLowerCase()
+  if (!command) return null
+
+  if (
+    command.includes('get-command psql') ||
+    command.includes('where psql') ||
+    command.includes('which psql') ||
+    command.includes('command -v psql') ||
+    command.includes('psql --version')
+  ) {
+    return 'local_psql_probe'
+  }
+
+  if (
+    command.includes('get-command winget') ||
+    command.includes('winget --version') ||
+    command.includes('choco --version') ||
+    command.includes('apt-get --version') ||
+    command.includes('brew --version')
+  ) {
+    return 'local_package_manager_probe'
+  }
+
+  return null
+}
+
+function extractCommandFromArgs(args: unknown): string {
+  if (!args || typeof args !== 'object') return ''
+  const obj = args as Record<string, unknown>
+  const command = obj.command
+  return typeof command === 'string' ? command : ''
+}
+
+function inferEventScene(toolName: string, args: unknown): string {
+  if (toolName === 'bash') {
+    const bashClass = classifyBashCommand(args)
+    if (bashClass === 'local_psql_probe') return 'database'
+    if (bashClass === 'local_package_manager_probe') return 'environment'
+    const command = extractCommandFromArgs(args).toLowerCase()
+    if (command.includes('postgres') || command.includes('sql')) return 'database'
+    if (command.includes('http') || command.includes('curl') || command.includes('wget')) return 'network'
+  }
+
+  if (toolName.includes('skill')) return 'capability'
+  return 'general'
+}
+
+function truncatePreview(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength)}...`
+}
+
+function isMeaningfulBashClassFailure(bashClass: string, result: ToolResult): boolean {
+  if (result.success) return false
+  const err = (result.error || '').toLowerCase()
+  const dataText = (() => {
+    try {
+      return JSON.stringify(result.data || '').toLowerCase()
+    } catch {
+      return String(result.data || '').toLowerCase()
+    }
+  })()
+
+  if (bashClass === 'local_psql_probe') {
+    return (
+      err.includes('exit code') ||
+      err.includes('not found') ||
+      dataText.includes('psql_not_found') ||
+      dataText.includes('could not find files for the given pattern')
+    )
+  }
+
+  return true
 }

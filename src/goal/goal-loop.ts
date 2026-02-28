@@ -19,6 +19,12 @@ import { planGoal, replanGoal } from './goal-planner'
 import { callAgent } from '../ai/agent-client'
 import type { RequestContext } from '../ai/agent-client'
 import { Logger } from '../utils/logger'
+import {
+  getExperienceRulesForGoal,
+  recordExperienceRuleHits,
+  reinforceExperienceRules,
+  type ExperienceRule,
+} from '../skills/registry'
 
 const logger = new Logger('GoalLoop')
 
@@ -34,12 +40,71 @@ export interface GoalLoopConfig {
   maxEvaluationRounds: number
   /** 步骤失败后最大重规划次数 */
   maxReplans: number
+  /** 技能管理类步骤最大迭代 */
+  maxStepIterationsSkill: number
+  /** 普通步骤最大迭代 */
+  maxStepIterationsDefault: number
+  /** 网络/API 类步骤最大迭代 */
+  maxStepIterationsNetwork: number
+  /** 数据库/分析类步骤最大迭代 */
+  maxStepIterationsData: number
+  /** 已提供远程目标信息的步骤最大迭代 */
+  maxStepIterationsRemoteTarget: number
+  /** 远程目标线索关键字/模式（字符串包含匹配） */
+  remoteTargetHints: string[]
+  /** 数据类任务关键词（用于迭代预算） */
+  dataSceneKeywords: string[]
+  /** 网络类任务关键词（用于迭代预算） */
+  networkSceneKeywords: string[]
 }
 
 const DEFAULT_CONFIG: GoalLoopConfig = {
   maxSteps: 20,
-  maxEvaluationRounds: 5,
+  maxEvaluationRounds: 12,
   maxReplans: 2,
+  maxStepIterationsSkill: 14,
+  maxStepIterationsDefault: 10,
+  maxStepIterationsNetwork: 12,
+  maxStepIterationsData: 14,
+  maxStepIterationsRemoteTarget: 16,
+  remoteTargetHints: [
+    'host:',
+    'hostname:',
+    'server:',
+    'endpoint:',
+    'postgresql://',
+    'mysql://',
+    'mongodb://',
+    'redis://',
+    'jdbc:',
+    '.com',
+    '.net',
+    '.org',
+  ],
+  dataSceneKeywords: [
+    'postgres',
+    'postgresql',
+    'mysql',
+    'redis',
+    'mongodb',
+    'database',
+    '数据库',
+    'sql',
+    '索引',
+    'analyze',
+    '分析',
+  ],
+  networkSceneKeywords: [
+    'http',
+    'https',
+    'api',
+    'endpoint',
+    'url',
+    'fetch',
+    '网络',
+    '远程',
+    'socket',
+  ],
 }
 
 // ============================================================================
@@ -101,6 +166,11 @@ export async function runGoalLoop(
     currentStepIndex: 0,
   }
   updatedGoal.updatedAt = Date.now()
+  // 动态评估轮数保护：至少覆盖“计划步数 + 重规划次数 + 缓冲”
+  let effectiveMaxEvaluationRounds = Math.max(
+    cfg.maxEvaluationRounds,
+    updatedGoal.plan.steps.length + cfg.maxReplans + 4
+  )
 
   // 向用户展示计划
   const planSummary = planResult.steps
@@ -117,7 +187,7 @@ export async function runGoalLoop(
   let replanCount = 0
   let totalStepsExecuted = 0
 
-  for (let round = 0; round < cfg.maxEvaluationRounds; round++) {
+  for (let round = 0; round < effectiveMaxEvaluationRounds; round++) {
     const currentGoal = getGoal(goal.id)!
     if (!currentGoal.plan) break
 
@@ -133,16 +203,27 @@ export async function runGoalLoop(
       await sendReply(`⚙️ **步骤 ${stepIndex + 1}/${plan.steps.length}**: ${step.description}`)
 
       // 复用现有 callAgent 执行步骤，传入 currentGoal.id 参数以便只加载对应的 Task-Scoped Skills
-      const stepInstruction = buildStepInstruction(step.description, currentGoal)
+      const stepInstructionBundle = buildStepInstruction(step.description, currentGoal, cfg)
+      const stepInstruction = stepInstructionBundle.instruction
+      if (stepInstructionBundle.appliedRuleIds.length > 0) {
+        recordExperienceRuleHits({
+          ruleIds: stepInstructionBundle.appliedRuleIds,
+          userId: currentGoal.userId,
+          goalId: currentGoal.id,
+          scene: stepInstructionBundle.scene,
+          phase: 'goal_step_execution',
+        })
+      }
       const lowerStep = step.description.toLowerCase()
       const isSkillManagementStep =
         lowerStep.includes('skill') ||
         lowerStep.includes('技能') ||
         lowerStep.includes('capability') ||
         lowerStep.includes('能力')
+      const stepMaxIterations = inferStepMaxIterations(step.description, currentGoal.description, cfg)
       const runtimeOptions = isSkillManagementStep
-        ? { maxIterations: 14 }
-        : { deniedTools: ['list_skills', 'read_skill'], maxIterations: 10 }
+        ? { maxIterations: Math.max(cfg.maxStepIterationsSkill, stepMaxIterations) }
+        : { deniedTools: ['list_skills', 'read_skill'], maxIterations: stepMaxIterations }
       const stepResult = await callAgent(
         stepInstruction,
         { history },
@@ -155,6 +236,19 @@ export async function runGoalLoop(
         const normalizedStepResult = normalizeStepResult(stepResult.message)
         step.status = 'completed'
         step.result = normalizedStepResult
+
+        const stepOutcome = inferStepOutcome(stepResult.message)
+        if (stepOutcome === 'effective' && stepInstructionBundle.autoRuleIds.length > 0) {
+          reinforceExperienceRules({
+            ruleIds: stepInstructionBundle.autoRuleIds,
+            outcome: 'effective',
+            userId: currentGoal.userId,
+            goalId: currentGoal.id,
+            scene: stepInstructionBundle.scene,
+            reason: 'goal_step_completed_needsMoreTools_false',
+            onlyAuto: true,
+          })
+        }
 
         // 将步骤输出作为 artifact 记录
         addArtifact(goal.id, {
@@ -173,6 +267,18 @@ export async function runGoalLoop(
         step.result = stepResult.message || 'Unknown error'
         logger.warn(`Step ${stepIndex + 1} failed: ${step.result}`)
 
+        if (stepInstructionBundle.autoRuleIds.length > 0) {
+          reinforceExperienceRules({
+            ruleIds: stepInstructionBundle.autoRuleIds,
+            outcome: 'ineffective',
+            userId: currentGoal.userId,
+            goalId: currentGoal.id,
+            scene: stepInstructionBundle.scene,
+            reason: 'goal_step_failed',
+            onlyAuto: true,
+          })
+        }
+
         // 尝试重规划
         if (replanCount < cfg.maxReplans) {
           replanCount++
@@ -184,6 +290,10 @@ export async function runGoalLoop(
               steps: newPlan.steps,
               currentStepIndex: 0,
             }
+            effectiveMaxEvaluationRounds = Math.max(
+              effectiveMaxEvaluationRounds,
+              totalStepsExecuted + newPlan.steps.length + (cfg.maxReplans - replanCount) + 3
+            )
             continue // 跳出当前步骤，用新计划进入下一轮
           } catch {
             logger.error('Replan failed, continuing with remaining steps')
@@ -274,6 +384,10 @@ export async function runGoalLoop(
             currentStepIndex: 0,
           }
           evalGoal.updatedAt = Date.now()
+          effectiveMaxEvaluationRounds = Math.max(
+            effectiveMaxEvaluationRounds,
+            totalStepsExecuted + newPlan.steps.length + (cfg.maxReplans - replanCount) + 3
+          )
           // 继续下一轮循环
         } catch {
           await updateGoalStatus(goal.id, 'blocked')
@@ -294,7 +408,10 @@ export async function runGoalLoop(
 
   // 超过最大评估轮数
   await updateGoalStatus(goal.id, 'blocked')
-  await sendReply(`⚠️ **目标执行已达最大轮数 (${cfg.maxEvaluationRounds})，已暂停。**`)
+  const finalGoal = getGoal(goal.id)
+  const finalPlan = finalGoal?.plan
+  const stepProgress = finalPlan ? `${Math.min(finalPlan.currentStepIndex, finalPlan.steps.length)}/${finalPlan.steps.length}` : 'unknown'
+  await sendReply(`⚠️ **目标执行已达最大轮数 (${effectiveMaxEvaluationRounds})，已暂停。**\n\n当前步骤进度: ${stepProgress}`)
   return { goalId: goal.id, completed: false, summary: 'Max evaluation rounds reached' }
 }
 
@@ -305,7 +422,14 @@ export async function runGoalLoop(
 /**
  * 将步骤描述转换为可执行的指令
  */
-function buildStepInstruction(stepDescription: string, goal: Goal): string {
+interface StepInstructionBundle {
+  instruction: string
+  scene: string
+  appliedRuleIds: number[]
+  autoRuleIds: number[]
+}
+
+function buildStepInstruction(stepDescription: string, goal: Goal, cfg: GoalLoopConfig): StepInstructionBundle {
   // 把已经产出的数据发给接下来的步骤
   let artifactsContext = ''
   if (goal.artifacts && goal.artifacts.length > 0) {
@@ -319,11 +443,47 @@ function buildStepInstruction(stepDescription: string, goal: Goal): string {
     artifactsContext = `\n## Previous Steps Artifacts\nYou can USE the following information gathered from previous steps to complete your task:\n${arts}\n`
   }
 
-  return `You are executing a step as part of a larger goal.
+  const remoteTargetHint = hasExplicitRemoteTargetHint(goal.description, cfg)
+    ? `
+## Remote Target Constraint (Strict)
+The goal contains explicit remote target connection information.
+- Prioritize remote execution using user-provided target info.
+- Avoid local environment probing/installation as default strategy.
+- Only do local dependency checks when a direct remote attempt has already failed and the check is strictly necessary.
+- If current environment cannot execute remotely, output an external-run guide with exact commands and expected outputs.
+`
+    : ''
+
+  const scene = inferGoalSceneForLoop(`${goal.description}\n${stepDescription}`, cfg)
+  let experienceRules: ExperienceRule[] = []
+  try {
+    experienceRules = getExperienceRulesForGoal({
+      userId: goal.userId,
+      scene,
+      goalText: `${goal.description}\n${stepDescription}`,
+      limit: 4,
+    })
+  } catch {
+    experienceRules = []
+  }
+  const appliedRuleIds = experienceRules.map((r) => r.id)
+  const autoRuleIds = experienceRules
+    .filter((r) => String(r.source || '').startsWith('auto:'))
+    .map((r) => r.id)
+  const experienceHint = experienceRules.length > 0
+    ? `
+## Experience Rules
+${experienceRules.map((r) => `- ${r.instruction}`).join('\n')}
+`
+    : ''
+
+  const instruction = `You are executing a step as part of a larger goal.
 
 ## Current Goal
 ${goal.description}
 ${artifactsContext}
+${remoteTargetHint}
+${experienceHint}
 ## Your Current Task
 ${stepDescription}
 
@@ -338,6 +498,13 @@ ${stepDescription}
 - Report what you accomplished.
 - At the end, include a fenced block \`\`\`goal_step_result ... \`\`\` with JSON:
   {"summary":"...", "evidence":["..."], "criteriaHints":["..."], "needsMoreTools": false}`
+
+  return {
+    instruction,
+    scene,
+    appliedRuleIds,
+    autoRuleIds,
+  }
 }
 
 function normalizeStepResult(raw: string): string {
@@ -393,4 +560,48 @@ function parseStepResultBlock(raw: string): {
   } catch {
     return null
   }
+}
+
+function inferStepOutcome(raw: string): 'effective' | 'unknown' {
+  const parsed = parseStepResultBlock(raw)
+  if (parsed) {
+    return parsed.needsMoreTools ? 'unknown' : 'effective'
+  }
+
+  if (/NeedsMoreTools:\s*false/i.test(raw)) return 'effective'
+  if (/是否需要继续调用工具:\s*否/.test(raw)) return 'effective'
+  return 'unknown'
+}
+
+function hasExplicitRemoteTargetHint(text: string, cfg: GoalLoopConfig): boolean {
+  const lower = text.toLowerCase()
+  const hasIpPort = /\b\d{1,3}(?:\.\d{1,3}){3}\s*:\s*\d{2,5}\b/.test(text)
+  const hasHostPort =
+    /(host|hostname|server|endpoint)\s*[:=]\s*[\w.-]+/i.test(text) &&
+    /(port)\s*[:=]\s*\d{2,5}/i.test(text)
+  const hasConnString = /([a-z]+:\/\/)/i.test(text)
+  const hasHostLike = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i.test(text)
+  const hasCustomHint = cfg.remoteTargetHints.some((hint) => lower.includes(hint.toLowerCase()))
+
+  return hasIpPort || hasHostPort || hasConnString || hasHostLike || hasCustomHint
+}
+
+function inferStepMaxIterations(stepDescription: string, goalDescription: string, cfg: GoalLoopConfig): number {
+  const text = `${stepDescription}\n${goalDescription}`.toLowerCase()
+
+  const dataLike = cfg.dataSceneKeywords.some((kw) => text.includes(kw.toLowerCase()))
+  const networkLike = cfg.networkSceneKeywords.some((kw) => text.includes(kw.toLowerCase()))
+
+  if (hasExplicitRemoteTargetHint(goalDescription, cfg)) return cfg.maxStepIterationsRemoteTarget
+  if (dataLike) return cfg.maxStepIterationsData
+  if (networkLike) return cfg.maxStepIterationsNetwork
+  return cfg.maxStepIterationsDefault
+}
+
+function inferGoalSceneForLoop(text: string, cfg: GoalLoopConfig): string {
+  const lower = text.toLowerCase()
+  if (hasExplicitRemoteTargetHint(text, cfg)) return 'network'
+  if (cfg.dataSceneKeywords.some((kw) => lower.includes(kw.toLowerCase()))) return 'database'
+  if (cfg.networkSceneKeywords.some((kw) => lower.includes(kw.toLowerCase()))) return 'network'
+  return 'general'
 }

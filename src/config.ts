@@ -52,6 +52,28 @@ export interface AppConfig {
     shellConfirmList?: string[]
     maxIterations?: number
     skillLoading?: 'lazy' | 'eager'
+    duplicateCallSuccessLimit?: number
+    duplicateCallFailureLimit?: number
+    bashClassFailureThreshold?: number
+    bashClassAbortThreshold?: number
+    enableExperienceEvents?: boolean
+    autoPromoteExperienceRules?: boolean
+    autoPromoteScope?: 'global' | 'user'
+    autoPromoteThreshold?: number
+    autoPromoteWindowMinutes?: number
+  }
+  goal?: {
+    maxSteps?: number
+    maxEvaluationRounds?: number
+    maxReplans?: number
+    maxStepIterationsSkill?: number
+    maxStepIterationsDefault?: number
+    maxStepIterationsNetwork?: number
+    maxStepIterationsData?: number
+    maxStepIterationsRemoteTarget?: number
+    remoteTargetHints?: string[]
+    dataSceneKeywords?: string[]
+    networkSceneKeywords?: string[]
   }
   /** @deprecated Use llm instead */
   claude: {
@@ -107,6 +129,63 @@ export function getDefaultConfig(): AppConfig {
       maxTokens: 4096,
       shellConfirmList: ['rm', 'mv', 'sudo', 'su', 'dd', 'reboot', 'shutdown', 'mkfs', 'chmod', 'chown', '>', '>>', '&', '|'],
       skillLoading: 'eager',
+      duplicateCallSuccessLimit: 1,
+      duplicateCallFailureLimit: 1,
+      bashClassFailureThreshold: 2,
+      bashClassAbortThreshold: 2,
+      enableExperienceEvents: true,
+      autoPromoteExperienceRules: true,
+      autoPromoteScope: 'global',
+      autoPromoteThreshold: 3,
+      autoPromoteWindowMinutes: 120,
+    },
+    goal: {
+      maxSteps: 20,
+      maxEvaluationRounds: 12,
+      maxReplans: 2,
+      maxStepIterationsSkill: 14,
+      maxStepIterationsDefault: 10,
+      maxStepIterationsNetwork: 12,
+      maxStepIterationsData: 14,
+      maxStepIterationsRemoteTarget: 16,
+      remoteTargetHints: [
+        'host:',
+        'hostname:',
+        'server:',
+        'endpoint:',
+        'postgresql://',
+        'mysql://',
+        'mongodb://',
+        'redis://',
+        'jdbc:',
+        '.com',
+        '.net',
+        '.org'
+      ],
+      dataSceneKeywords: [
+        'postgres',
+        'postgresql',
+        'mysql',
+        'redis',
+        'mongodb',
+        'database',
+        '数据库',
+        'sql',
+        '索引',
+        'analyze',
+        '分析'
+      ],
+      networkSceneKeywords: [
+        'http',
+        'https',
+        'api',
+        'endpoint',
+        'url',
+        'fetch',
+        '网络',
+        '远程',
+        'socket'
+      ]
     },
     claude: {
       apiKey: '',

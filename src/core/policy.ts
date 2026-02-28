@@ -178,6 +178,18 @@ export class PolicyEngine {
         }
       }
 
+      // 常见包管理器安装/更新命令默认要求确认，避免模型走本机安装旁路
+      const lowerCommand = command.toLowerCase()
+      const packageManagerInstall =
+        /(^|\s)(winget|choco|chocolatey|apt|apt-get|yum|dnf|brew|pacman)(\s|$)/i.test(command) &&
+        /(install|upgrade|update)\b/i.test(command)
+      if (packageManagerInstall || lowerCommand.includes('powershell get-command psql')) {
+        return {
+          type: 'require_approval',
+          prompt: `Package/Client Installation Check Request\n\nCommand:\n\`\`\`\n${command}\n\`\`\`\n\nApprove this local environment/package operation?`
+        }
+      }
+
       if (this.isSafeReadOnlyShellCommand(command)) {
         return { type: 'allow' }
       }

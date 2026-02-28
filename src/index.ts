@@ -79,6 +79,7 @@ async function startBotCommand(): Promise<void> {
     workDir: sessionsDir,
     maxSteps: 5,
     timeout: config.claude.timeout,
+    goalLoop: config.goal,
   })
 
   // Start Bots

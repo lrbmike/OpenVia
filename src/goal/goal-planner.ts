@@ -16,6 +16,7 @@ import type { Goal, PlanStep } from '../types/goal'
 import type { Message } from '../types'
 import { Logger } from '../utils/logger'
 import { loadSkills, getDefaultSkillsDir } from '../skills'
+import { getExperienceRulesForGoal } from '../skills/registry'
 
 const logger = new Logger('GoalPlanner')
 
@@ -43,8 +44,10 @@ You are operating via OpenVia, a CLI gateway with access to:
 8. If no success criteria are provided, also generate appropriate criteria.
 9. NEVER add a preparatory step like "check if tools/skills exist" unless the user explicitly asked for environment diagnostics.
 10. For simple information tasks (weather/time/news/price), prefer 1-2 direct steps: fetch required data, then answer.
-11. For domain-specific goals (database optimization/OCR/browser automation/video transcript/api sdk generation), if matching capability is not already installed, your first step SHOULD be capability discovery via \`npx skills find\` + install + bind.
-12. Avoid writing large local scripts/files in step 1 when the capability gap has not been resolved yet.
+11. If current capabilities are insufficient, your first actionable step SHOULD be capability discovery + install + bind, then continue execution.
+12. Avoid writing large local scripts/files in step 1 before capability gaps are resolved.
+13. Prefer direct execution against user-provided targets. Avoid unnecessary local environment probing/installation unless explicitly requested or strictly required after direct attempts fail.
+14. When "Experience Rules" are provided in context, treat them as higher-priority planning guidance unless they conflict with explicit user requirements.
 
 ## Output Format
 {
@@ -78,8 +81,7 @@ export async function planGoal(
 ): Promise<PlanResult> {
   const userMessage = await buildPlannerUserMessage(goal)
   const responseText = await callLLMForText(llm, PLANNER_SYSTEM_PROMPT, userMessage)
-  const parsed = parsePlannerResponse(responseText)
-  return await enforceCapabilityDiscoveryIfNeeded(goal, parsed)
+  return parsePlannerResponse(responseText)
 }
 
 /**
@@ -93,8 +95,7 @@ export async function replanGoal(
 ): Promise<PlanResult> {
   const userMessage = await buildReplanUserMessage(goal, failedStepIndex, failureReason)
   const responseText = await callLLMForText(llm, PLANNER_SYSTEM_PROMPT, userMessage)
-  const parsed = parsePlannerResponse(responseText)
-  return await enforceCapabilityDiscoveryIfNeeded(goal, parsed)
+  return parsePlannerResponse(responseText)
 }
 
 // ============================================================================
@@ -111,6 +112,7 @@ async function buildPlannerUserMessage(goal: Goal): Promise<string> {
     : ''
 
   const availableSkills = await getDynamicSkillsContext()
+  const experienceContext = getExperienceContext(goal.userId, goal.description)
 
   return `## Goal
 ${goal.description}
@@ -120,6 +122,7 @@ ${criteriaSection}
 ${constraintsSection}
 
 ${availableSkills}
+${experienceContext}
 
 Please decompose this goal into actionable steps. Return JSON only.`
 }
@@ -136,6 +139,10 @@ async function buildReplanUserMessage(
 
   const failedStep = goal.plan?.steps[failedStepIndex]
   const availableSkills = await getDynamicSkillsContext()
+  const experienceContext = getExperienceContext(
+    goal.userId,
+    `${goal.description}\n${failedStep?.description || ''}\n${failureReason}`
+  )
 
   return `## Goal
 ${goal.description}
@@ -151,6 +158,7 @@ ${completedSteps}
 - Reason: ${failureReason}
 
 ${availableSkills}
+${experienceContext}
 
 Please generate a new plan to complete the remaining criteria, considering the failure above. Return JSON only.`
 }
@@ -171,88 +179,58 @@ ${visibleSkills.map((s) => `- ${s.id}: ${s.metadata.description || s.metadata.na
   }
 }
 
-type CapabilityGapRule = {
-  query: string
-  reason: string
-  keywords: string[]
-  matchSkillKeywords: string[]
+function getExperienceContext(userId: string, goalText: string): string {
+  try {
+    const scene = inferPlanningScene(goalText)
+    const rules = getExperienceRulesForGoal({
+      userId,
+      scene,
+      goalText,
+      limit: 6,
+    })
+    if (rules.length === 0) return ''
+
+    const lines = rules
+      .map((r) => `- [P${r.priority}|${r.scopeType}] ${r.instruction}`)
+      .join('\n')
+    return `## Experience Rules (scene: ${scene})
+${lines}
+Apply these rules when planning, unless they conflict with explicit user requirements.`
+  } catch (error) {
+    logger.warn(`Failed to load experience rules for planning: ${error}`)
+    return ''
+  }
 }
 
-const CAPABILITY_GAP_RULES: CapabilityGapRule[] = [
-  {
-    query: 'postgres',
-    reason: 'PostgreSQL 数据库连接/分析',
-    keywords: ['postgres', 'postgresql', 'psql', '数据库', '索引优化', 'sql优化'],
-    matchSkillKeywords: ['postgres', 'postgresql', 'neon', 'supabase'],
-  },
-  {
-    query: 'ocr',
-    reason: 'OCR 识别能力',
-    keywords: ['ocr', '识别', '扫描件', '发票', '图片文字'],
-    matchSkillKeywords: ['ocr', 'tesseract', 'vision', 'invoice'],
-  },
-  {
-    query: 'playwright',
-    reason: '动态网页抓取/浏览器自动化',
-    keywords: ['动态网页', '渲染', 'playwright', 'browser', '登录后页面', '自动化'],
-    matchSkillKeywords: ['playwright', 'browser', 'puppeteer', 'selenium'],
-  },
-  {
-    query: 'youtube transcript',
-    reason: '视频转录能力',
-    keywords: ['youtube', '视频转文字', '转录', '字幕'],
-    matchSkillKeywords: ['youtube', 'transcript', 'subtitle', 'video'],
-  },
-]
-
-async function enforceCapabilityDiscoveryIfNeeded(goal: Goal, plan: PlanResult): Promise<PlanResult> {
-  const gap = await detectCapabilityGap(goal.description)
-  if (!gap) return plan
-
-  const alreadyHasDiscoveryStep = plan.steps.some((s) => {
-    const d = s.description.toLowerCase()
-    return d.includes('npx skills find') || d.includes('skills add') || d.includes('bind_skill')
-  })
-  if (alreadyHasDiscoveryStep) return plan
-
-  const discoveryStep: PlanStep = {
-    id: 'step_discovery',
-    description: `当前任务可能存在能力缺口（${gap.reason}）。先用 bash 执行 "npx skills find ${gap.query}"，选择合适技能后执行 "npx skills add <owner/repo@skill> -g -y"，安装成功后调用 bind_skill 绑定到当前 Goal，再继续后续步骤。`,
-    status: 'pending',
+function inferPlanningScene(text: string): string {
+  const t = text.toLowerCase()
+  if (
+    t.includes('postgres') ||
+    t.includes('postgresql') ||
+    t.includes('mysql') ||
+    t.includes('sql') ||
+    t.includes('数据库') ||
+    t.includes('索引') ||
+    t.includes('query')
+  ) {
+    return 'database'
   }
-
-  const merged = [discoveryStep, ...plan.steps].map((s, i) => ({
-    ...s,
-    id: `step_${i + 1}`,
-    status: 'pending' as const,
-  }))
-
-  logger.info(`Capability gap detected (${gap.query}), prepended discovery step`)
-  return { ...plan, steps: merged }
-}
-
-async function detectCapabilityGap(goalDescription: string): Promise<CapabilityGapRule | null> {
-  const goalLower = goalDescription.toLowerCase()
-
-  const skillsDir = getDefaultSkillsDir()
-  const { skills } = await loadSkills(skillsDir)
-  const installedTokens = skills
-    .flatMap((s) => [s.id, s.metadata.name || '', s.metadata.description || ''])
-    .map((t) => t.toLowerCase())
-
-  for (const rule of CAPABILITY_GAP_RULES) {
-    const mentionsDomain = rule.keywords.some((k) => goalLower.includes(k))
-    if (!mentionsDomain) continue
-
-    const hasMatchingSkill = installedTokens.some((token) =>
-      rule.matchSkillKeywords.some((k) => token.includes(k))
-    )
-    if (!hasMatchingSkill) {
-      return rule
-    }
+  if (t.includes('weather') || t.includes('天气') || t.includes('temperature') || t.includes('温度')) {
+    return 'weather'
   }
-
-  return null
+  if (t.includes('api') || t.includes('http') || t.includes('endpoint') || t.includes('url')) {
+    return 'network'
+  }
+  if (
+    t.includes('browser') ||
+    t.includes('playwright') ||
+    t.includes('ocr') ||
+    t.includes('automation') ||
+    t.includes('自动化')
+  ) {
+    return 'automation'
+  }
+  return 'general'
 }
 
 async function callLLMForText(
