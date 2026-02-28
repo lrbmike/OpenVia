@@ -30,6 +30,23 @@
     "autoPromoteScope": "global",
     "autoPromoteThreshold": 3,
     "autoPromoteWindowMinutes": 120,
+    "asyncExperienceProcessing": true,
+    "experienceWorkerIntervalMs": 2000,
+    "experienceWorkerBatchSize": 20,
+    "experienceQueueCleanupEnabled": true,
+    "experienceQueueRetentionHours": 72,
+    "experienceQueueCleanupIntervalMs": 600000,
+    "experienceSummarizer": {
+      "enabled": false,
+      "format": "openai",
+      "apiKey": "",
+      "baseUrl": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "timeout": 30000,
+      "maxTokens": 256,
+      "temperature": 0.2,
+      "systemPrompt": "你是经验规则提炼器。请将输入事件压缩为一条简洁、可执行、可复用的中文规则。"
+    },
     "temperature": 0.7,
     "shellConfirmList": ["rm", "mv", "sudo", "su", "dd", "reboot", "shutdown", "del", "rmdir"],
     "skillLoading": "eager"

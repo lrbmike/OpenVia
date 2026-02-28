@@ -17,7 +17,7 @@ import type { ToolRegistry, ToolResult, ExecutionContext } from './registry'
 import type { PolicyEngine, SessionContext } from './policy'
 import { ToolExecutor } from './executor'
 import { Logger } from '../utils/logger'
-import { autoPromoteExperienceRule, recordExperienceEvent } from '../skills/registry'
+import { autoPromoteExperienceRule, enqueueExperienceProcessing, recordExperienceEvent } from '../skills/registry'
 
 const logger = new Logger('Gateway')
 
@@ -59,6 +59,7 @@ export interface AgentGatewayConfig {
   autoPromoteScope?: 'global' | 'user'
   autoPromoteThreshold?: number
   autoPromoteWindowMinutes?: number
+  asyncExperienceProcessing?: boolean
 }
 
 // ============================================================================
@@ -93,6 +94,7 @@ export class AgentGateway {
       autoPromoteScope: config.autoPromoteScope ?? 'global',
       autoPromoteThreshold: config.autoPromoteThreshold ?? 3,
       autoPromoteWindowMinutes: config.autoPromoteWindowMinutes ?? 120,
+      asyncExperienceProcessing: config.asyncExperienceProcessing ?? true,
     }
   }
   
@@ -397,6 +399,33 @@ export class AgentGateway {
 
         if (result.success) {
           successfulToolCallCounts.set(fp, successCount + 1)
+          this.recordExperience(
+            'tool_call_succeeded',
+            inferEventScene(tc.name, tc.args),
+            bashClass || tc.name,
+            {
+              tool: tc.name,
+              args: tc.args,
+              fingerprint: fp,
+            },
+            true,
+            session.userId
+          )
+          if (failureCount > 0) {
+            this.recordExperience(
+              'tool_call_recovered',
+              inferEventScene(tc.name, tc.args),
+              bashClass || tc.name,
+              {
+                tool: tc.name,
+                args: tc.args,
+                fingerprint: fp,
+                recoveredAfterFailures: failureCount,
+              },
+              true,
+              session.userId
+            )
+          }
         } else {
           failedToolCallCounts.set(fp, failureCount + 1)
           this.recordExperience(
@@ -445,7 +474,7 @@ export class AgentGateway {
   ): void {
     if (!this.config.enableExperienceEvents) return
     try {
-      recordExperienceEvent({
+      const eventId = recordExperienceEvent({
         eventType,
         scene,
         signal,
@@ -453,6 +482,11 @@ export class AgentGateway {
         success,
         userId,
       })
+
+      if (this.config.asyncExperienceProcessing) {
+        enqueueExperienceProcessing(eventId)
+        return
+      }
 
       const promoted = autoPromoteExperienceRule({
         enabled: this.config.autoPromoteExperienceRules,

@@ -82,6 +82,43 @@ export interface AutoPromoteExperienceResult {
   reason?: string
 }
 
+export interface ExperienceQueueDrainOptions {
+  batchSize?: number
+  autoPromoteEnabled?: boolean
+  autoPromoteScope?: ExperienceScopeType
+  autoPromoteThreshold?: number
+  autoPromoteWindowMinutes?: number
+  refinePromotedRule?: (input: {
+    ruleId: number
+    eventType: string
+    scene: string
+    signal: string
+    userId: string
+    goalId: string
+    instruction: string
+    recentCount: number
+  }) => Promise<string | null>
+}
+
+export interface ExperienceQueueDrainResult {
+  claimed: number
+  processed: number
+  promoted: number
+  refined: number
+  failed: number
+}
+
+export interface ExperienceQueueCleanupOptions {
+  retentionHours?: number
+  maxRowsPerRun?: number
+  staleFailedAttempts?: number
+}
+
+export interface ExperienceQueueCleanupResult {
+  deletedDone: number
+  deletedFailed: number
+}
+
 export interface ExperienceRuleHitInput {
   ruleIds: number[]
   userId?: string
@@ -223,12 +260,28 @@ export async function initRegistry(): Promise<void> {
     )
   `)
 
+  // 5. experience_processing_queue: 经验事件异步处理队列
+  db.run(`
+    CREATE TABLE IF NOT EXISTS experience_processing_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      available_at INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(event_id) REFERENCES experience_events(id)
+    )
+  `)
+
   db.run(`CREATE INDEX IF NOT EXISTS idx_active_contexts_goal ON active_contexts(goal_id)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_experience_rules_scope ON experience_rules(scope_type, scope_id)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_experience_rules_scene ON experience_rules(scene, enabled, priority DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_experience_events_scene ON experience_events(scene, event_type, created_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_experience_events_user_goal ON experience_events(user_id, goal_id, created_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_experience_rules_effect ON experience_rules(enabled, effective_streak, priority DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_experience_queue_status ON experience_processing_queue(status, available_at, id)`)
 
   // 兼容旧库：补齐经验规则增强字段
   ensureColumnExists(db, 'experience_rules', 'hit_count', 'INTEGER NOT NULL DEFAULT 0')
@@ -448,7 +501,7 @@ export function getExperienceRulesForGoal(query: ExperienceRuleQuery): Experienc
     .slice(0, limit)
 }
 
-export function recordExperienceEvent(input: ExperienceEventInput): void {
+export function recordExperienceEvent(input: ExperienceEventInput): number {
   const now = Date.now()
   const scene = normalizeScene(input.scene)
   const signal = (input.signal || '').trim()
@@ -456,7 +509,7 @@ export function recordExperienceEvent(input: ExperienceEventInput): void {
   const success =
     input.success === undefined || input.success === null ? null : (input.success ? 1 : 0)
 
-  getDb().prepare(`
+  const info = getDb().prepare(`
     INSERT INTO experience_events (
       rule_id, event_type, scene, signal, payload_json, success, user_id, goal_id, created_at
     )
@@ -472,6 +525,13 @@ export function recordExperienceEvent(input: ExperienceEventInput): void {
     input.goalId || '',
     now
   )
+
+  const maybeId = (info as { lastInsertRowid?: number | bigint }).lastInsertRowid
+  if (maybeId !== undefined && maybeId !== null) return Number(maybeId)
+  const fallback = getDb()
+    .query('SELECT last_insert_rowid() as id')
+    .get() as { id: number | bigint } | undefined
+  return Number(fallback?.id || 0)
 }
 
 export function autoPromoteExperienceRule(input: AutoPromoteExperienceInput): AutoPromoteExperienceResult {
@@ -492,6 +552,7 @@ export function autoPromoteExperienceRule(input: AutoPromoteExperienceInput): Au
   const threshold = Math.max(2, Math.min(input.threshold ?? 3, 20))
   const windowMinutes = Math.max(5, Math.min(input.windowMinutes ?? 120, 24 * 60))
   const windowStart = Date.now() - windowMinutes * 60 * 1000
+  const failedOnlyCount = !isRecoveryLikeEvent(eventType)
 
   const queryByUser = scopeType === 'user'
   const countRow = getDb().prepare(`
@@ -501,13 +562,14 @@ export function autoPromoteExperienceRule(input: AutoPromoteExperienceInput): Au
       AND scene = ?
       AND signal = ?
       AND created_at >= ?
-      AND (success IS NULL OR success = 0)
+      AND (? = 0 OR success IS NULL OR success = 0)
       AND (? = 0 OR user_id = ?)
   `).get(
     eventType,
     scene,
     signal,
     windowStart,
+    failedOnlyCount ? 1 : 0,
     queryByUser ? 1 : 0,
     scopeId
   ) as { c: number } | undefined
@@ -552,6 +614,182 @@ export function autoPromoteExperienceRule(input: AutoPromoteExperienceInput): Au
   })
 
   return { promoted: true, recentCount, ruleId }
+}
+
+export function enqueueExperienceProcessing(eventId: number): void {
+  if (!Number.isInteger(eventId) || eventId <= 0) return
+  const now = Date.now()
+  getDb().prepare(`
+    INSERT OR IGNORE INTO experience_processing_queue (
+      event_id, status, attempts, available_at, created_at, updated_at
+    ) VALUES (?, 'pending', 0, ?, ?, ?)
+  `).run(eventId, now, now, now)
+}
+
+export async function drainExperienceProcessingQueue(
+  options: ExperienceQueueDrainOptions = {}
+): Promise<ExperienceQueueDrainResult> {
+  const now = Date.now()
+  const batchSize = Math.max(1, Math.min(options.batchSize ?? 20, 200))
+  const autoPromoteEnabled = options.autoPromoteEnabled !== false
+  const scope = options.autoPromoteScope ?? 'global'
+  const threshold = options.autoPromoteThreshold ?? 3
+  const windowMinutes = options.autoPromoteWindowMinutes ?? 120
+
+  const result: ExperienceQueueDrainResult = {
+    claimed: 0,
+    processed: 0,
+    promoted: 0,
+    refined: 0,
+    failed: 0,
+  }
+
+  // 异常恢复：处理进程中断导致的 processing 卡死任务
+  const staleProcessingThreshold = now - 5 * 60 * 1000
+  getDb().prepare(`
+    UPDATE experience_processing_queue
+    SET status = 'pending', updated_at = ?
+    WHERE status = 'processing' AND updated_at < ?
+  `).run(now, staleProcessingThreshold)
+
+  const pendingRows = getDb().prepare(`
+    SELECT id, event_id, attempts
+    FROM experience_processing_queue
+    WHERE status = 'pending' AND available_at <= ?
+    ORDER BY id ASC
+    LIMIT ?
+  `).all(now, batchSize) as Array<{ id: number; event_id: number; attempts: number }>
+
+  if (pendingRows.length === 0) return result
+
+  for (const row of pendingRows) {
+    const claim = getDb().prepare(`
+      UPDATE experience_processing_queue
+      SET status = 'processing', attempts = attempts + 1, updated_at = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(now, row.id)
+    if ((claim.changes || 0) === 0) continue
+    result.claimed++
+
+    try {
+      const eventRow = getDb().prepare(`
+        SELECT id, event_type, scene, signal, payload_json, success, user_id, goal_id, created_at
+        FROM experience_events
+        WHERE id = ?
+      `).get(row.event_id) as
+        | {
+            id: number
+            event_type: string
+            scene: string
+            signal: string
+            payload_json: string | null
+            success: number | null
+            user_id: string
+            goal_id: string
+            created_at: number
+          }
+        | undefined
+
+      if (!eventRow) {
+        markQueueJobDone(row.id)
+        result.processed++
+        continue
+      }
+
+      if (autoPromoteEnabled) {
+        const promoted = autoPromoteExperienceRule({
+          eventType: eventRow.event_type,
+          scene: eventRow.scene,
+          signal: eventRow.signal,
+          userId: eventRow.user_id,
+          scopeType: scope,
+          threshold,
+          windowMinutes,
+          enabled: true,
+        })
+        if (promoted.promoted && promoted.ruleId) {
+          result.promoted++
+          if (options.refinePromotedRule) {
+            const rule = getDb().prepare(`
+              SELECT instruction
+              FROM experience_rules
+              WHERE id = ?
+            `).get(promoted.ruleId) as { instruction: string } | undefined
+
+            if (rule?.instruction) {
+              const refined = await options.refinePromotedRule({
+                ruleId: promoted.ruleId,
+                eventType: eventRow.event_type,
+                scene: eventRow.scene,
+                signal: eventRow.signal,
+                userId: eventRow.user_id,
+                goalId: eventRow.goal_id,
+                instruction: rule.instruction,
+                recentCount: promoted.recentCount,
+              })
+              if (refined && refined.trim() && refined.trim() !== rule.instruction.trim()) {
+                getDb().prepare(`
+                  UPDATE experience_rules
+                  SET instruction = ?, updated_at = ?, source = ?
+                  WHERE id = ?
+                `).run(refined.trim(), Date.now(), 'auto:llm-refined', promoted.ruleId)
+                result.refined++
+              }
+            }
+          }
+        }
+      }
+
+      markQueueJobDone(row.id)
+      result.processed++
+    } catch (error) {
+      result.failed++
+      markQueueJobRetry(row.id, row.attempts + 1, String(error))
+    }
+  }
+
+  return result
+}
+
+export function cleanupExperienceProcessingQueue(
+  options: ExperienceQueueCleanupOptions = {}
+): ExperienceQueueCleanupResult {
+  const now = Date.now()
+  const retentionHours = Math.max(1, Math.min(options.retentionHours ?? 72, 24 * 90))
+  const maxRowsPerRun = Math.max(100, Math.min(options.maxRowsPerRun ?? 2000, 20_000))
+  const staleFailedAttempts = Math.max(1, Math.min(options.staleFailedAttempts ?? 3, 20))
+  const cutoff = now - retentionHours * 60 * 60 * 1000
+
+  const doneResult = getDb().prepare(`
+    DELETE FROM experience_processing_queue
+    WHERE id IN (
+      SELECT id
+      FROM experience_processing_queue
+      WHERE status = 'done' AND updated_at < ?
+      ORDER BY id ASC
+      LIMIT ?
+    )
+  `).run(cutoff, maxRowsPerRun)
+
+  const failedResult = getDb().prepare(`
+    DELETE FROM experience_processing_queue
+    WHERE id IN (
+      SELECT id
+      FROM experience_processing_queue
+      WHERE updated_at < ?
+        AND (
+          status = 'failed'
+          OR (status = 'pending' AND last_error IS NOT NULL AND attempts >= ?)
+        )
+      ORDER BY id ASC
+      LIMIT ?
+    )
+  `).run(cutoff, staleFailedAttempts, maxRowsPerRun)
+
+  return {
+    deletedDone: doneResult.changes || 0,
+    deletedFailed: failedResult.changes || 0,
+  }
 }
 
 export function recordExperienceRuleHits(input: ExperienceRuleHitInput): void {
@@ -820,6 +1058,16 @@ function deriveAutoRuleTemplate(
     }
   }
 
+  if (eventType === 'tool_call_recovered') {
+    return {
+      scene: scene === 'general' ? 'general' : scene,
+      pattern: signal === 'none' ? '恢复,recovered,重试成功' : signal,
+      instruction: '同类调用出现“先失败后成功”时，后续优先复用已验证成功的路径，减少盲目试错。',
+      priority: 88,
+      confidence: 0.79,
+    }
+  }
+
   return null
 }
 
@@ -922,6 +1170,31 @@ function serializePayload(payload: unknown): string | null {
   } catch {
     return JSON.stringify({ value: String(payload) })
   }
+}
+
+function isRecoveryLikeEvent(eventType: string): boolean {
+  return eventType === 'tool_call_recovered' || eventType === 'tool_call_succeeded'
+}
+
+function markQueueJobDone(queueId: number): void {
+  getDb().prepare(`
+    UPDATE experience_processing_queue
+    SET status = 'done', last_error = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(Date.now(), queueId)
+}
+
+function markQueueJobRetry(queueId: number, attempts: number, error: string): void {
+  const now = Date.now()
+  const backoffMs = Math.min(15 * 60 * 1000, Math.max(30_000, attempts * 30_000))
+  getDb().prepare(`
+    UPDATE experience_processing_queue
+    SET status = 'pending',
+        last_error = ?,
+        available_at = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).run(error.slice(0, 500), now + backoffMs, now, queueId)
 }
 
 function clampPriority(priority: number, min = 1, max = 100): number {

@@ -9,6 +9,7 @@ import { ToolRegistry, getToolRegistry, PolicyEngine, getPolicyEngine, AgentGate
 import { coreTools } from '../tools'
 import { loadSkills, getDefaultSkillsDir, syncProjectSkillsToGlobal, syncAgentsSkillsToOpenVia, syncSingleAgentSkillToOpenVia } from '../skills'
 import { initRegistry, getBoundSkillsForGoal } from '../skills/registry'
+import { startExperiencePipeline, stopExperiencePipeline } from '../skills/experience-pipeline'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
 import type { Message } from '../types'
@@ -137,8 +138,50 @@ export async function initAgentClient(
     autoPromoteScope: config.llm.autoPromoteScope,
     autoPromoteThreshold: config.llm.autoPromoteThreshold,
     autoPromoteWindowMinutes: config.llm.autoPromoteWindowMinutes,
+    asyncExperienceProcessing: config.llm.asyncExperienceProcessing,
   })
   logger.info(`Agent Gateway created (maxIterations: ${config.llm.maxIterations || 10})`)
+
+  let summarizerAdapter: LLMAdapter | undefined
+  if (config.llm.experienceSummarizer?.enabled) {
+    const s = config.llm.experienceSummarizer
+    if (s.apiKey && s.baseUrl && s.model) {
+      try {
+        summarizerAdapter = await createLLMAdapter({
+          format: s.format || config.llm.format,
+          apiKey: s.apiKey,
+          baseUrl: s.baseUrl,
+          model: s.model,
+          timeout: s.timeout ?? 30_000,
+          maxTokens: s.maxTokens ?? 256,
+          temperature: s.temperature ?? 0.2,
+        })
+        logger.info(`Experience summarizer enabled: ${summarizerAdapter.name} (${summarizerAdapter.model})`)
+      } catch (error) {
+        logger.warn(`Failed to init experience summarizer adapter: ${error}`)
+      }
+    } else {
+      logger.warn('Experience summarizer enabled but missing apiKey/baseUrl/model, skipped')
+    }
+  }
+
+  startExperiencePipeline({
+    enabled: config.llm.asyncExperienceProcessing !== false,
+    intervalMs: config.llm.experienceWorkerIntervalMs,
+    batchSize: config.llm.experienceWorkerBatchSize,
+    queueCleanupEnabled: config.llm.experienceQueueCleanupEnabled,
+    queueRetentionHours: config.llm.experienceQueueRetentionHours,
+    queueCleanupIntervalMs: config.llm.experienceQueueCleanupIntervalMs,
+    autoPromoteEnabled: config.llm.autoPromoteExperienceRules,
+    autoPromoteScope: config.llm.autoPromoteScope,
+    autoPromoteThreshold: config.llm.autoPromoteThreshold,
+    autoPromoteWindowMinutes: config.llm.autoPromoteWindowMinutes,
+    summarizer: {
+      enabled: !!config.llm.experienceSummarizer?.enabled,
+      adapter: summarizerAdapter,
+      systemPrompt: config.llm.experienceSummarizer?.systemPrompt,
+    },
+  })
   
   logger.info('Agent Client initialized successfully!')
 }
@@ -148,6 +191,7 @@ export async function initAgentClient(
  */
 export function stopAgentClient(): void {
   logger.info('Stopping Agent Client...')
+  stopExperiencePipeline()
   llmAdapter = null
   agentGateway = null
   // Registry 和 Policy 是单例，保留

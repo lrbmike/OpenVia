@@ -61,6 +61,23 @@ export interface AppConfig {
     autoPromoteScope?: 'global' | 'user'
     autoPromoteThreshold?: number
     autoPromoteWindowMinutes?: number
+    asyncExperienceProcessing?: boolean
+    experienceWorkerIntervalMs?: number
+    experienceWorkerBatchSize?: number
+    experienceQueueCleanupEnabled?: boolean
+    experienceQueueRetentionHours?: number
+    experienceQueueCleanupIntervalMs?: number
+    experienceSummarizer?: {
+      enabled?: boolean
+      format?: 'openai' | 'claude' | 'gemini'
+      apiKey?: string
+      baseUrl?: string
+      model?: string
+      timeout?: number
+      maxTokens?: number
+      temperature?: number
+      systemPrompt?: string
+    }
   }
   goal?: {
     maxSteps?: number
@@ -138,6 +155,15 @@ export function getDefaultConfig(): AppConfig {
       autoPromoteScope: 'global',
       autoPromoteThreshold: 3,
       autoPromoteWindowMinutes: 120,
+      asyncExperienceProcessing: true,
+      experienceWorkerIntervalMs: 2000,
+      experienceWorkerBatchSize: 20,
+      experienceQueueCleanupEnabled: true,
+      experienceQueueRetentionHours: 72,
+      experienceQueueCleanupIntervalMs: 600000,
+      experienceSummarizer: {
+        enabled: false,
+      },
     },
     goal: {
       maxSteps: 20,
