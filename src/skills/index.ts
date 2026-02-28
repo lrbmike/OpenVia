@@ -9,6 +9,7 @@ export {
   loadSkills,
   formatSkillsForPrompt,
   getDefaultSkillsDir,
+  syncProjectSkillsToGlobal,
   type SkillMetadata,
   type LoadedSkill,
   type SkillsLoadResult

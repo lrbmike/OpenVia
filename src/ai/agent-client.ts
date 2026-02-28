@@ -7,7 +7,7 @@
 import { createLLMAdapter, type LLMAdapter, type LLMConfig } from '../llm'
 import { ToolRegistry, getToolRegistry, PolicyEngine, getPolicyEngine, AgentGateway } from '../core'
 import { coreTools } from '../tools'
-import { loadSkills, getDefaultSkillsDir } from '../skills'
+import { loadSkills, getDefaultSkillsDir, syncProjectSkillsToGlobal } from '../skills'
 import { initRegistry, getBoundSkillsForGoal } from '../skills/registry'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
@@ -77,6 +77,9 @@ export async function initAgentClient(
   
   // 0. 初始化 Capability Registry SQLite 数据库
   await initRegistry()
+  
+  // 1. 先把工程下自带技能同步镜像给全局
+  await syncProjectSkillsToGlobal()
   
   // 仅为了打印最初的信息先加载一次，真正的拼接在后面每次调用里
   const skillsDir = getDefaultSkillsDir()
@@ -221,6 +224,9 @@ export async function callAgent(
       return decision === 'allow'
     }
     
+    // 记录最近一次启动的 bash 命令行（为了在 tool_result 中做自动技能拦截挂载）
+    let lastBashCommand = ''
+    
     // 处理 Agent 事件流
     for await (const event of agentGateway.handleMessage({
       message,
@@ -237,6 +243,9 @@ export async function callAgent(
           
         case 'tool_start':
           logger.info(`Tool started: ${event.name} args=${toLogString(event.args)}`)
+          if (event.name === 'bash' && event.args && typeof event.args === 'object' && 'command' in event.args) {
+            lastBashCommand = String(event.args.command)
+          }
           break
           
         case 'tool_pending':
@@ -246,6 +255,31 @@ export async function callAgent(
         case 'tool_result':
           if (event.result.success) {
             logger.info(`Tool finished: ${event.name} (success=true)`)
+            
+            // 自动绑定检测：如果本次完成的是 bash 且历史命令涉及安装技能 (npx skills add)，尝试自动解析和绑定
+            if (event.name === 'bash' && lastBashCommand.includes('npx skills add') && activeGoalId) {
+              // 正则提取包名里的 skill id，格式: <owner/repo@skill_id>
+              const match = lastBashCommand.match(/@([a-zA-Z0-9_\-]+)(?:\s|$)/)
+              if (match && match[1]) {
+                const skillId = match[1]
+                logger.info(`[Auto-Bind] Detected installation of skill '${skillId}'. Automatically binding to Goal ${activeGoalId}...`)
+                try {
+                  const { bindSkillToGoal, getSkillScope } = await import('../skills/registry')
+                  
+                  // 仅当这是一个新技能还没入库，或其生命周期未限定为核心时才能动态绑定
+                  const scope = getSkillScope(skillId)
+                  if (scope !== 'core' && scope !== 'persistent') {
+                    bindSkillToGoal(skillId, activeGoalId)
+                    logger.info(`[Auto-Bind] Successfully bound ${skillId} to ${activeGoalId}`)
+                  }
+                } catch (err) {
+                  logger.warn(`[Auto-Bind] Failed to automatically bind ${skillId}: ${err}`)
+                }
+              }
+              // 处理完清理掉
+              lastBashCommand = ''
+            }
+            
           } else {
             let errorMsg = `Tool ${event.name} failed: ${event.result.error}`
             if (event.result.data) {

@@ -20,6 +20,45 @@ import { getSkillScope, registerInstalledSkill } from './registry'
 const logger = new Logger('SkillsLoader')
 
 // ============================================================================
+// 初始化逻辑
+// ============================================================================
+
+/**
+ * 将项目自带的内置技能（如 web-search / find-skills）同步至全局技能存储区
+ * 只有当全局区尚未具备该技能时才会进行拷贝（避免覆盖用户的修改）
+ */
+export async function syncProjectSkillsToGlobal(): Promise<void> {
+  try {
+    const projectSkillsDir = path.join(process.cwd(), 'skills')
+    const globalSkillsDir = getDefaultSkillsDir()
+    
+    // 确保项目技能目录确实存在
+    const stats = await fs.stat(projectSkillsDir).catch(() => null)
+    if (!stats || !stats.isDirectory()) return
+
+    // 确保全局目标目录存在
+    await fs.mkdir(globalSkillsDir, { recursive: true }).catch(() => {})
+
+    const entries = await fs.readdir(projectSkillsDir, { withFileTypes: true })
+    
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+        
+      const sourcePath = path.join(projectSkillsDir, entry.name)
+      const destPath = path.join(globalSkillsDir, entry.name)
+      
+      const destExists = await fs.stat(destPath).catch(() => null)
+      if (!destExists) {
+        logger.info(`Syncing built-in skill: ${entry.name}`)
+        await fs.cp(sourcePath, destPath, { recursive: true })
+      }
+    }
+  } catch (err) {
+    logger.error(`Failed to sync built-in skills: ${err}`)
+  }
+}
+
+// ============================================================================
 // 类型定义
 // ============================================================================
 
