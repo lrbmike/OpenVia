@@ -371,7 +371,9 @@ export class OpenAIFormatAdapter implements LLMAdapter {
               const args = tc.args ? JSON.parse(tc.args) : {}
               yield { type: 'tool_call', id: tc.id, name: tc.name, args }
             } catch {
-              yield { type: 'error', message: `Failed to parse tool args: ${tc.args}` }
+              // Instead of crashing the whole stream, pass the flawed string down so the agent loop
+              // can gracefully report an error to the LLM, prompting it to self-correct.
+              yield { type: 'tool_call', id: tc.id, name: tc.name, args: { _parseError: true, rawArgs: tc.args } }
             }
           }
         }

@@ -295,7 +295,7 @@ export class ClaudeFormatAdapter implements LLMAdapter {
                       args
                     }
                   } catch {
-                    yield { type: 'error', message: `Failed to parse tool args: ${currentToolUse.inputJson}` }
+                    yield { type: 'tool_call', id: currentToolUse.id, name: currentToolUse.name, args: { _parseError: true, rawArgs: currentToolUse.inputJson } }
                   }
                   currentToolUse = null
                 }

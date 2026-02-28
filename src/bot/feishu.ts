@@ -36,6 +36,7 @@ export class FeishuChannel implements Channel {
   private appSecret: string
   private wsEndpoint?: string
   private processedMessages = new Set<string>()
+  private wsClient?: lark.WSClient
 
   constructor(appId: string, appSecret: string, wsEndpoint?: string) {
     this.appId = appId
@@ -56,7 +57,7 @@ export class FeishuChannel implements Channel {
   ): Promise<void> {
     logger.info('Starting Feishu bot...')
 
-    const wsClient = new lark.WSClient({
+    this.wsClient = new lark.WSClient({
         appId: this.appId,
         appSecret: this.appSecret,
     })
@@ -269,11 +270,23 @@ export class FeishuChannel implements Channel {
         }
     })
 
-    wsClient.start({ eventDispatcher })
+    this.wsClient.start({ eventDispatcher })
   }
 
   async stop(): Promise<void> {
-    logger.info('Stopping Feishu bot...')
+    if (this.wsClient) {
+      logger.info('Stopping Feishu WS Client...')
+      try {
+         if (typeof (this.wsClient as any).stop === 'function') {
+             await (this.wsClient as any).stop();
+         } else if (typeof (this.wsClient as any).disconnect === 'function') {
+             await (this.wsClient as any).disconnect();
+         }
+      } catch (e) {
+         logger.debug('Error stopping Feishu WS Client', e)
+      }
+      this.wsClient = undefined;
+    }
   }
 
   /**

@@ -39,8 +39,9 @@ You are operating via OpenVia, a CLI gateway with access to:
 3. Steps should be ordered by dependency - do prerequisites first.
 4. Each step's description should be clear enough that an AI agent can execute it with the available tools.
 5. Generate 2-8 steps. Avoid over-decomposition.
-6. If the goal already has success criteria, generate steps that address ALL criteria.
-7. If no success criteria are provided, also generate appropriate criteria.
+6. DO NOT generate steps to "search for", "list", or "find" skills. The available skills are already given to you below. Use them directly!
+7. If the goal already has success criteria, generate steps that address ALL criteria.
+8. If no success criteria are provided, also generate appropriate criteria.
 
 ## Output Format
 {
