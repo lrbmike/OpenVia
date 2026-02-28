@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
+import * as os from 'node:os'
 import type { ToolDefinition, ToolResult, ExecutionContext } from '../core/registry'
 import { Logger } from '../utils/logger'
 
@@ -23,14 +24,22 @@ export const bashTool: ToolDefinition = {
   description: 'Execute a shell command and return the output. Use this for running scripts, installing packages, file operations, etc.',
   inputSchema,
   permissions: ['shell'],
-  
   async executor(args: unknown, ctx: ExecutionContext): Promise<ToolResult> {
     const parsed = inputSchema.safeParse(args)
     if (!parsed.success) {
       return { success: false, error: `Invalid arguments: ${parsed.error.message}` }
     }
     
-    const { command, timeout = 30000 } = parsed.data
+    // 提取所需数据
+    const { timeout = 30000 } = parsed.data
+    let { command } = parsed.data
+    
+    // Auto-resolve home directory shortcuts across platforms before handing off to exec()
+    // This allows the LLM to write `~/.openvia` or powershell `$env:USERPROFILE\.openvia` universally
+    const homeDir = os.homedir()
+    command = command.replace(/(^|\s)~\//g, `$1${homeDir}/`)
+    command = command.replace(/\$env:USERPROFILE[\\/]/gi, `${homeDir}/`)
+    command = command.replace(/\$HOME[\\/]/gi, `${homeDir}/`)
     
     try {
       logger.info(`[Bash] Executing: ${command.slice(0, 100)}...`)

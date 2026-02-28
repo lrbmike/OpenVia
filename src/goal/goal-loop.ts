@@ -203,7 +203,14 @@ export async function runGoalLoop(
         const satisfiedList = evalResult.satisfied
           .map(c => `  ✅ ${c.description}`)
           .join('\n')
-        await sendReply(`🎉 **目标已完成！**\n\n**已满足的标准:**\n${satisfiedList}`)
+          
+        let finalResultMsg = ''
+        if (evalGoal.artifacts && evalGoal.artifacts.length > 0) {
+          const lastResult = evalGoal.artifacts[evalGoal.artifacts.length - 1]
+          finalResultMsg = `\n\n**最终结果:**\n${lastResult.content}`
+        }
+        
+        await sendReply(`🎉 **目标已完成！**\n\n**已满足的标准:**\n${satisfiedList}${finalResultMsg}`)
         return { goalId: goal.id, completed: true, summary: 'Goal completed successfully' }
       }
 
