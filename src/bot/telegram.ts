@@ -36,14 +36,14 @@ function formatMarkdownToHtml(markdown: string): string {
     // Telegram supports <pre><code class="language-xyz">...</code></pre>
     const langAttr = lang ? ` class="language-${escapeHtml(lang)}"` : ''
     placeholders.push(`<pre><code${langAttr}>${escapeHtml(code)}</code></pre>`)
-    return `@@@CODE_BLOCK_${i}@@@`
+    return `@@@CODEBLOCK${i}@@@`
   })
 
   // 2. Protect Inline Code (single backticks)
   text = text.replace(/`([^`]+)`/g, (_, code) => {
     const i = placeholders.length
     placeholders.push(`<code>${escapeHtml(code)}</code>`)
-    return `@@@CODE_INLINE_${i}@@@`
+    return `@@@CODEINLINE${i}@@@`
   })
 
   // 3. Escape HTML for the Rest (Crucial step!)
@@ -81,8 +81,8 @@ function formatMarkdownToHtml(markdown: string): string {
   // 5. Restore Placeholders
   placeholders.forEach((val, i) => {
     // We must replace strictly.
-    text = text.replace(`@@@CODE_BLOCK_${i}@@@`, val)
-    text = text.replace(`@@@CODE_INLINE_${i}@@@`, val)
+    text = text.replace(`@@@CODEBLOCK${i}@@@`, val)
+    text = text.replace(`@@@CODEINLINE${i}@@@`, val)
   })
 
   return text
