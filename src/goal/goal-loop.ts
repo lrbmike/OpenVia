@@ -286,11 +286,18 @@ export async function runGoalLoop(
  * 将步骤描述转换为可执行的指令
  */
 function buildStepInstruction(stepDescription: string, goal: Goal): string {
+  // 把已经产出的数据发给接下来的步骤
+  let artifactsContext = ''
+  if (goal.artifacts && goal.artifacts.length > 0) {
+    const arts = goal.artifacts.map(a => `### ${a.name} (${a.description})\n${a.content}`).join('\n\n')
+    artifactsContext = `\n## Previous Steps Artifacts\nYou can USE the following information gathered from previous steps to complete your task:\n${arts}\n`
+  }
+
   return `You are executing a step as part of a larger goal.
 
 ## Current Goal
 ${goal.description}
-
+${artifactsContext}
 ## Your Current Task
 ${stepDescription}
 

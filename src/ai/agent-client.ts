@@ -254,7 +254,15 @@ export async function callAgent(
           
         case 'tool_result':
           if (event.result.success) {
-            logger.info(`Tool finished: ${event.name} (success=true)`)
+            let msg = `Tool finished: ${event.name} (success=true)`
+            if (event.result.data) {
+               const dataStr = typeof event.result.data === 'object' 
+                 ? JSON.stringify(event.result.data)
+                 : String(event.result.data)
+               // 截断过长的成功输出
+               msg += `\nOutput: ${dataStr.slice(0, 500)}${dataStr.length > 500 ? '...(truncated)' : ''}`
+            }
+            logger.info(msg)
             
             // 自动绑定检测：如果本次完成的是 bash 且历史命令涉及安装技能 (npx skills add)，尝试自动解析和绑定
             if (event.name === 'bash' && lastBashCommand.includes('npx skills add') && activeGoalId) {
