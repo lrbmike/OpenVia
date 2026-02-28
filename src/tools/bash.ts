@@ -36,10 +36,17 @@ export const bashTool: ToolDefinition = {
     
     // Auto-resolve home directory shortcuts across platforms before handing off to exec()
     // This allows the LLM to write `~/.openvia` or powershell `$env:USERPROFILE\.openvia` universally
-    const homeDir = os.homedir()
+    const homeDir = os.homedir().replace(/\\/g, '/') // Ensure homeDir itself uses forward slashes
     command = command.replace(/(^|\s)~\//g, `$1${homeDir}/`)
+    
+    // Normalize Windows shortcuts and potential backslash pollution in the resulting path
     command = command.replace(/\$env:USERPROFILE[\\/]/gi, `${homeDir}/`)
     command = command.replace(/\$HOME[\\/]/gi, `${homeDir}/`)
+    
+    // Convert stray backslashes in .openvia related path-like strings to forward slashes
+    if (os.platform() !== 'win32') {
+      command = command.replace(/(?<=\.openvia)[^\s"']+/gi, match => match.replace(/\\/g, '/'))
+    }
     
     try {
       logger.info(`[Bash] Executing: ${command.slice(0, 100)}...`)
