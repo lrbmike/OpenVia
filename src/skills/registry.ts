@@ -397,7 +397,7 @@ export function upsertExperienceRule(input: UpsertExperienceRuleInput): number {
 export function getExperienceRulesForGoal(query: ExperienceRuleQuery): ExperienceRule[] {
   const now = Date.now()
   const userId = (query.userId || '').trim()
-  const scene = normalizeScene(query.scene)
+  const sceneFilter = (query.scene || '').trim() ? normalizeScene(query.scene) : null
   const goalText = (query.goalText || '').toLowerCase()
   const limit = Math.max(1, Math.min(query.limit ?? 8, 50))
 
@@ -409,14 +409,14 @@ export function getExperienceRulesForGoal(query: ExperienceRuleQuery): Experienc
     FROM experience_rules
     WHERE enabled = 1
       AND (expires_at IS NULL OR expires_at > ?)
-      AND (scene = ? OR scene = 'general' OR scene = '*')
+      AND (? IS NULL OR scene = ? OR scene = 'general' OR scene = '*')
       AND (
         (scope_type = 'global' AND scope_id = '')
         OR (scope_type = 'user' AND scope_id = ?)
       )
     ORDER BY priority DESC, confidence DESC, updated_at DESC
     LIMIT 200
-  `).all(now, scene, userId) as Array<{
+  `).all(now, sceneFilter, sceneFilter, userId) as Array<{
     id: number
     scope_type: ExperienceScopeType
     scope_id: string

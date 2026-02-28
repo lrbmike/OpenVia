@@ -181,56 +181,24 @@ ${visibleSkills.map((s) => `- ${s.id}: ${s.metadata.description || s.metadata.na
 
 function getExperienceContext(userId: string, goalText: string): string {
   try {
-    const scene = inferPlanningScene(goalText)
     const rules = getExperienceRulesForGoal({
       userId,
-      scene,
       goalText,
-      limit: 6,
+      limit: 8,
     })
     if (rules.length === 0) return ''
 
+    const sceneSummary = Array.from(new Set(rules.map((r) => r.scene))).slice(0, 4).join(', ')
     const lines = rules
-      .map((r) => `- [P${r.priority}|${r.scopeType}] ${r.instruction}`)
+      .map((r) => `- [${r.scene}|P${r.priority}|${r.scopeType}] ${r.instruction}`)
       .join('\n')
-    return `## Experience Rules (scene: ${scene})
+    return `## Experience Rules (multi-scene: ${sceneSummary || 'general'})
 ${lines}
 Apply these rules when planning, unless they conflict with explicit user requirements.`
   } catch (error) {
     logger.warn(`Failed to load experience rules for planning: ${error}`)
     return ''
   }
-}
-
-function inferPlanningScene(text: string): string {
-  const t = text.toLowerCase()
-  if (
-    t.includes('postgres') ||
-    t.includes('postgresql') ||
-    t.includes('mysql') ||
-    t.includes('sql') ||
-    t.includes('数据库') ||
-    t.includes('索引') ||
-    t.includes('query')
-  ) {
-    return 'database'
-  }
-  if (t.includes('weather') || t.includes('天气') || t.includes('temperature') || t.includes('温度')) {
-    return 'weather'
-  }
-  if (t.includes('api') || t.includes('http') || t.includes('endpoint') || t.includes('url')) {
-    return 'network'
-  }
-  if (
-    t.includes('browser') ||
-    t.includes('playwright') ||
-    t.includes('ocr') ||
-    t.includes('automation') ||
-    t.includes('自动化')
-  ) {
-    return 'automation'
-  }
-  return 'general'
 }
 
 async function callLLMForText(
