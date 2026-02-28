@@ -12,12 +12,14 @@ import { readTool } from './read'
 import { writeTool } from './write'
 import { editTool } from './edit'
 import { readSkillTool, listSkillsTool } from './skill'
+import { bindSkillTool } from './bind-skill'
 
 export { bashTool } from './bash'
 export { readTool } from './read'
 export { writeTool } from './write'
 export { editTool } from './edit'
 export { readSkillTool, listSkillsTool, refreshSkillsCache } from './skill'
+export { bindSkillTool } from './bind-skill'
 
 /** Core tools */
 export const coreTools: ToolDefinition[] = [
@@ -26,6 +28,7 @@ export const coreTools: ToolDefinition[] = [
   writeTool,
   editTool,
   listSkillsTool,
-  readSkillTool
+  readSkillTool,
+  bindSkillTool
 ]
 

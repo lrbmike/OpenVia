@@ -17,9 +17,10 @@ import type {
   Goal,
   GoalStatus,
   GoalArtifact,
-  SuccessCriterion,
 } from '../types/goal'
 import { Logger } from '../utils/logger'
+import { promises as fs } from 'node:fs'
+import { loadSkills, getDefaultSkillsDir } from '../skills'
 
 const logger = new Logger('GoalManager')
 
@@ -86,7 +87,7 @@ export function getActiveGoals(userId: string): Goal[] {
 /**
  * 更新目标状态
  */
-export function updateGoalStatus(goalId: string, status: GoalStatus): Goal | undefined {
+export async function updateGoalStatus(goalId: string, status: GoalStatus): Promise<Goal | undefined> {
   const goal = goals.get(goalId)
   if (!goal) {
     logger.warn(`Goal not found: ${goalId}`)
@@ -97,7 +98,37 @@ export function updateGoalStatus(goalId: string, status: GoalStatus): Goal | und
   goal.status = status
   goal.updatedAt = Date.now()
   logger.info(`Goal ${goalId} status: ${oldStatus} -> ${status}`)
+  
+  // Capability Context: 当目标完成或失败时，卸载绑定的属于当前 task 作用域的能力
+  if (status === 'completed' || status === 'failed') {
+    await cleanupTaskScopedSkills(goalId)
+  }
+  
   return goal
+}
+
+/**
+ * 【私有】清理任务作用域关联的技能
+ */
+async function cleanupTaskScopedSkills(goalId: string): Promise<void> {
+  try {
+    const skillsDir = getDefaultSkillsDir()
+    const result = await loadSkills(skillsDir)
+    
+    // 找出所有标记为 task 且显式绑定此目标，或未绑定其他目标但 scope 为 task 的幽灵技能（防泄露清理策略可配置）
+    const taskSkills = result.skills.filter(s => 
+      s.metadata.scope === 'task' && s.metadata.bound_goal_id === goalId
+    )
+    
+    for (const skill of taskSkills) {
+      logger.info(`Cleaning up task-scoped skill: ${skill.id} for goal ${goalId}`)
+      await fs.rm(skill.path, { recursive: true, force: true }).catch(err => {
+        logger.error(`Failed to remove skill ${skill.id}: ${err}`)
+      })
+    }
+  } catch (err) {
+    logger.error(`Error during capability context cleanup for goal ${goalId}: ${err}`)
+  }
 }
 
 /**

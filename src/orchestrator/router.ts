@@ -142,7 +142,8 @@ export async function handleMessage(
     const response = await callAgent(
       input,
       { history: session.history },
-      requestContext
+      requestContext,
+      session.activeGoalId
     )
 
     if (response.action === 'reply' && response.message) {

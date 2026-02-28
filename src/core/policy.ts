@@ -165,6 +165,14 @@ export class PolicyEngine {
     if (tool.name.toLowerCase() === 'bash' || tool.name.toLowerCase() === 'shell') {
       const command = (args as { command?: string })?.command || ''
 
+      // 拦截 npx skills add（安装新技能必须确认）
+      if (command.includes('npx skills add') || command.includes('bunx skills add')) {
+        return {
+          type: 'require_approval',
+          prompt: `Skill Installation Request\n\nCommand:\n\`\`\`\n${command}\n\`\`\`\n\nDo you want to install this new skill?`
+        }
+      }
+
       if (this.isSafeReadOnlyShellCommand(command)) {
         return { type: 'allow' }
       }

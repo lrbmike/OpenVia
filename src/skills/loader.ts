@@ -15,6 +15,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { Logger } from '../utils/logger'
+import { getSkillScope, registerInstalledSkill } from './registry'
 
 const logger = new Logger('SkillsLoader')
 
@@ -29,6 +30,9 @@ export interface SkillMetadata {
   version?: string
   author?: string
   tags?: string[]
+  // scope 从 sqlite registry 中动态获悉，文件内的作为回退
+  scope?: 'core' | 'task' | 'persistent'
+  bound_goal_id?: string
 }
 
 /** 加载的 Skill */
@@ -87,6 +91,17 @@ export async function loadSkills(skillsDir: string): Promise<SkillsLoadResult> {
         // 解析元数据和指令
         const { metadata, instructions } = parseSkillMd(content, entry.name)
         
+        // SQLite Registry: 如果该技能还未被登记进 SQL，将其登记
+        // 首先从 SQL 获取它之前的强制 scope；如果 SQL 里没有，才用 YAML 里解析的
+        const recordScope = getSkillScope(entry.name) // 获取注册表值，这可能没找到所以默认为 persistent
+        if (!recordScope || recordScope === 'persistent') {
+           // 若为空或默认值，登记当前实际的 metadata.scope 进去，以便以后持久化
+           registerInstalledSkill(entry.name, metadata.name, metadata.description, metadata.scope || 'persistent')
+        } 
+        
+        // 最终决定它的 scope: SQLite优先 > YAML覆盖 > persistent默认
+        metadata.scope = recordScope !== 'persistent' ? recordScope : (metadata.scope || 'persistent')
+        
         skills.push({
           id: entry.name,
           metadata,
@@ -94,7 +109,7 @@ export async function loadSkills(skillsDir: string): Promise<SkillsLoadResult> {
           path: skillPath
         })
         
-        logger.info(`Loaded skill: ${metadata.name} (${entry.name})`)
+        logger.info(`Loaded skill: ${metadata.name} (${entry.name}) [scope=${metadata.scope}]`)
         
       } catch (err) {
         const message = `Failed to load skill ${entry.name}: ${err}`
@@ -121,6 +136,7 @@ export async function loadSkills(skillsDir: string): Promise<SkillsLoadResult> {
  * ---
  * name: Skill Name
  * description: What this skill does
+ * scope: core | task | persistent (optional, fallback from db metadata)
  * ---
  * 
  * # Instructions
@@ -133,7 +149,8 @@ function parseSkillMd(content: string, fallbackName: string): {
   // 默认元数据
   let metadata: SkillMetadata = {
     name: fallbackName,
-    description: ''
+    description: '',
+    scope: 'persistent' // 默认作为持久能力
   }
   
   let instructions = content
@@ -168,7 +185,18 @@ function parseSkillMd(content: string, fallbackName: string): {
           metadata.author = value
           break
         case 'tags':
-          metadata.tags = value.split(',').map(t => t.trim())
+          // 处理形如 [tag1, tag2] 的格式
+          let tagsStr = value
+          if (tagsStr.startsWith('[') && tagsStr.endsWith(']')) {
+            tagsStr = tagsStr.slice(1, -1)
+          }
+          metadata.tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean)
+          break
+        case 'scope':
+          metadata.scope = value as 'core' | 'task' | 'persistent'
+          break
+        case 'bound_goal_id':
+          metadata.bound_goal_id = value
           break
       }
     }

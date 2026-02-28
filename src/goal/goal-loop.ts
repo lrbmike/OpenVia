@@ -76,7 +76,7 @@ export async function runGoalLoop(
 
   // ── 1. 创建目标 ──
   const goal = createGoal({ userId, description: goalDescription })
-  updateGoalStatus(goal.id, 'planning')
+  await updateGoalStatus(goal.id, 'planning')
   await sendReply(`🎯 **目标已创建**\n> ${goalDescription}\n\n⏳ 正在规划执行步骤...`)
 
   // ── 2. 规划 ──
@@ -84,7 +84,7 @@ export async function runGoalLoop(
   try {
     planResult = await planGoal(llm, goal)
   } catch (error) {
-    updateGoalStatus(goal.id, 'failed')
+    await updateGoalStatus(goal.id, 'failed')
     const msg = error instanceof Error ? error.message : String(error)
     await sendReply(`❌ 目标规划失败: ${msg}`)
     return { goalId: goal.id, completed: false, summary: `Planning failed: ${msg}` }
@@ -113,7 +113,7 @@ export async function runGoalLoop(
   await sendReply(`📋 **执行计划**\n\n**成功标准:**\n${criteriaSummary}\n\n**步骤:**\n${planSummary}\n\n🚀 开始执行...`)
 
   // ── 3. 逐步执行 ──
-  updateGoalStatus(goal.id, 'running')
+  await updateGoalStatus(goal.id, 'running')
   let replanCount = 0
   let totalStepsExecuted = 0
 
@@ -132,12 +132,13 @@ export async function runGoalLoop(
       step.status = 'running'
       await sendReply(`⚙️ **步骤 ${stepIndex + 1}/${plan.steps.length}**: ${step.description}`)
 
-      // 复用现有 callAgent 执行步骤
+      // 复用现有 callAgent 执行步骤，传入 currentGoal.id 参数以便只加载对应的 Task-Scoped Skills
       const stepInstruction = buildStepInstruction(step.description, currentGoal)
       const stepResult = await callAgent(
         stepInstruction,
         { history },
-        requestContext
+        requestContext,
+        currentGoal.id
       )
 
       if (stepResult.action === 'reply' && stepResult.message) {
@@ -187,7 +188,7 @@ export async function runGoalLoop(
     const evalGoal = getGoal(goal.id)!
     if (evalGoal.successCriteria.length === 0) {
       // 无成功标准的情况下，计划执行完就算完成
-      updateGoalStatus(goal.id, 'completed')
+      await updateGoalStatus(goal.id, 'completed')
       await sendReply('✅ **目标已完成**（所有步骤已执行）')
       return { goalId: goal.id, completed: true, summary: 'All steps executed' }
     }
@@ -198,7 +199,7 @@ export async function runGoalLoop(
       const evalResult = await evaluateGoal(llm, { goal: evalGoal })
 
       if (evalResult.completed) {
-        updateGoalStatus(goal.id, 'completed')
+        await updateGoalStatus(goal.id, 'completed')
         const satisfiedList = evalResult.satisfied
           .map(c => `  ✅ ${c.description}`)
           .join('\n')
@@ -220,7 +221,7 @@ export async function runGoalLoop(
 
       if (allStepsDone && replanCount >= cfg.maxReplans) {
         // 无法继续
-        updateGoalStatus(goal.id, 'blocked')
+        await updateGoalStatus(goal.id, 'blocked')
         await sendReply(
           `⚠️ **目标未完成（已达最大尝试次数）**\n\n**已完成:**\n${satisfiedList || '  (无)'}\n\n**未完成:**\n${missingList}`
         )
@@ -248,7 +249,7 @@ export async function runGoalLoop(
           evalGoal.updatedAt = Date.now()
           // 继续下一轮循环
         } catch {
-          updateGoalStatus(goal.id, 'blocked')
+          await updateGoalStatus(goal.id, 'blocked')
           await sendReply(`⚠️ **重新规划失败，目标暂停**\n\n**未完成:**\n${missingList}`)
           return { goalId: goal.id, completed: false, summary: 'Replan failed' }
         }
@@ -258,14 +259,14 @@ export async function runGoalLoop(
       const msg = error instanceof Error ? error.message : String(error)
       logger.error(`Evaluation failed: ${msg}`)
       // 评估失败不应该阻止继续，标记为 blocked
-      updateGoalStatus(goal.id, 'blocked')
+      await updateGoalStatus(goal.id, 'blocked')
       await sendReply(`⚠️ 目标评估失败: ${msg}`)
       return { goalId: goal.id, completed: false, summary: `Evaluation failed: ${msg}` }
     }
   }
 
   // 超过最大评估轮数
-  updateGoalStatus(goal.id, 'blocked')
+  await updateGoalStatus(goal.id, 'blocked')
   await sendReply(`⚠️ **目标执行已达最大轮数 (${cfg.maxEvaluationRounds})，已暂停。**`)
   return { goalId: goal.id, completed: false, summary: 'Max evaluation rounds reached' }
 }

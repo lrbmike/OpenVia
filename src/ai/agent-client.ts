@@ -8,6 +8,7 @@ import { createLLMAdapter, type LLMAdapter, type LLMConfig } from '../llm'
 import { ToolRegistry, getToolRegistry, PolicyEngine, getPolicyEngine, AgentGateway } from '../core'
 import { coreTools } from '../tools'
 import { loadSkills, getDefaultSkillsDir } from '../skills'
+import { initRegistry, getBoundSkillsForGoal } from '../skills/registry'
 import type { AppConfig } from '../config'
 import { Logger } from '../utils/logger'
 import type { Message } from '../types'
@@ -48,7 +49,8 @@ let llmAdapter: LLMAdapter | null = null
 let agentGateway: AgentGateway | null = null
 let toolRegistry: ToolRegistry | null = null
 let policyEngine: PolicyEngine | null = null
-let systemPrompt: string = ''
+let baseSystemPrompt: string = ''
+let skillLoadingStrategy: 'eager' | 'lazy' = 'eager'
 let workDir: string = process.cwd()
 
 // ============================================================================
@@ -69,42 +71,22 @@ export async function initAgentClient(
     workDir = sessionsDir
   }
   
-  // 保存基础 system prompt
-  let basePrompt = config.systemPrompt || config.llm.systemPrompt || ''
+  // 保存基础 system prompt 和加载策略
+  baseSystemPrompt = config.systemPrompt || config.llm.systemPrompt || ''
+  skillLoadingStrategy = (config.llm.skillLoading as 'eager' | 'lazy') || 'eager'
   
-  // 加载用户 Skills（只记录列表，不注入完整内容）
+  // 0. 初始化 Capability Registry SQLite 数据库
+  await initRegistry()
+  
+  // 仅为了打印最初的信息先加载一次，真正的拼接在后面每次调用里
   const skillsDir = getDefaultSkillsDir()
   const { skills, errors } = await loadSkills(skillsDir)
   if (errors.length > 0) {
     logger.warn(`Skills loading had ${errors.length} errors`)
   }
   if (skills.length > 0) {
-    const loadingStrategy = config.llm.skillLoading || 'eager'
-    let skillsPrompt = ''
-
-    if (loadingStrategy === 'eager') {
-      const { formatSkillsForPrompt } = await import('../skills')
-      skillsPrompt = formatSkillsForPrompt(skills)
-      logger.info(`Loaded ${skills.length} user skills (Eager Loading): ${skills.map(s => s.id).join(', ')}`)
-    } else {
-      // Lazy Loading: 只注入 Skills 列表
-      const skillsList = skills.map(s => 
-        `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
-      ).join('\n')
-      
-      skillsPrompt = `
-## Available Skills
-
-You have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.
-
-${skillsList}
-`
-      logger.info(`Loaded ${skills.length} user skills (Lazy Loading): ${skills.map(s => s.id).join(', ')}`)
-    }
-
-    basePrompt = basePrompt + '\n' + skillsPrompt
+    logger.info(`Initial skills loaded (${skillLoadingStrategy} loading): ${skills.map(s => s.id).join(', ')}`)
   }
-  systemPrompt = basePrompt
   
   // 1. 创建 LLM Adapter
   const llmConfig: LLMConfig = {
@@ -170,7 +152,8 @@ import type { ContentBlock } from '../types/protocol'
 export async function callAgent(
   message: string | ContentBlock[],
   context: { history: Message[] },
-  requestContext: RequestContext
+  requestContext: RequestContext,
+  activeGoalId?: string
 ): Promise<{ action: 'reply' | 'error'; message?: string }> {
   if (!agentGateway) {
     return { action: 'error', message: 'Agent not initialized' }
@@ -183,6 +166,44 @@ export async function callAgent(
     logger.info(
       `Calling agent for user=${userId}, channel=${channelId}, history=${context.history.length}, inputType=${typeof message === 'string' ? 'text' : 'multimodal'}`
     )
+    
+    // 每次请求动态构建 system prompt，实现技能热加载
+    const { refreshSkillsCache } = await import('../tools/skill')
+    refreshSkillsCache()
+    
+    let currentSystemPrompt = baseSystemPrompt
+    const skillsDir = getDefaultSkillsDir()
+    const { skills, errors } = await loadSkills(skillsDir)
+    if (errors.length > 0) {
+      logger.warn(`Skills hot-loading had ${errors.length} errors`)
+    }
+    
+    // Capability Context: 根据 SQLite 逻辑注册表过滤可见的 Skills
+    // 规则：
+    // 1. core 和 persistent 始终可见
+    // 2. task 仅当它的 ID 存在于 activeGoalId 查出的绑定记录中时可见
+    const boundSkills = activeGoalId ? getBoundSkillsForGoal(activeGoalId) : []
+    const visibleSkills = skills.filter(s => {
+      const scope = s.metadata.scope || 'persistent'
+      if (scope === 'core' || scope === 'persistent') return true
+      if (scope === 'task' && boundSkills.includes(s.id)) return true
+      return false
+    })
+    
+    if (visibleSkills.length > 0) {
+      let skillsPrompt = ''
+      if (skillLoadingStrategy === 'eager') {
+        const { formatSkillsForPrompt } = await import('../skills')
+        skillsPrompt = formatSkillsForPrompt(visibleSkills)
+      } else {
+        const skillsList = visibleSkills.map(s => 
+          `- ${s.id}: ${s.metadata.name}${s.metadata.description ? ` - ${s.metadata.description}` : ''}`
+        ).join('\n')
+        
+        skillsPrompt = `\n## Available Skills (Context: ${activeGoalId ? 'Goal-' + activeGoalId.slice(0,6) : 'Chat'})\n\nYou have access to the following user-defined skills. Use \`list_skills\` to see them, and \`read_skill\` to read the full instructions when needed.\n\n${skillsList}\n`
+      }
+      currentSystemPrompt += '\n' + skillsPrompt
+    }
     
     // 权限请求处理器 - 使用 PermissionBridge 实现真正的用户等待
     const onPermissionRequest = async (prompt: string): Promise<boolean> => {
@@ -205,7 +226,7 @@ export async function callAgent(
       message,
       history: context.history,
       session: { userId, chatId: channelId },
-      systemPrompt,
+      systemPrompt: currentSystemPrompt,
       onPermissionRequest
     })) {
       switch (event.type) {
